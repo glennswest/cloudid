@@ -1,0 +1,262 @@
+# CLAUDE.md -- CloudIdOperator
+
+## Core Rules
+
+1. **All changes are approved.** Do not ask for confirmation before making changes. Execute the work.
+2. **Every change must be committed to GitHub.** Commit early, commit often.
+3. **Push after every logical unit of work.**
+4. **Commit first, test after.** If tests fail, fix and commit the fix separately.
+5. **CHANGELOG.md must be maintained.** Every change logged with date, description, and category.
+6. **Documentation must stay current.** Code and docs ship together.
+7. **This file is the work plan.** Update task lists as you progress.
+8. **No sensitive information in commits.** Scan every change for secrets.
+9. **Preserve context at all times.** Commit and push frequently.
+10. **Follow semantic versioning.**
+
+---
+
+## Engineering Principles
+
+### Self-Healing and Consistency
+
+**This is the most critical principle.** When any error or inconsistency is discovered:
+
+1. **Always add automated detection** -- if you find a bug, add code that detects the condition at startup and during operation
+2. **Always add automated correction** -- if the condition is fixable, fix it automatically rather than requiring manual intervention
+3. **Add consistency checks at every boundary** -- startup, cache rebuild, metadata response, NATS message processing
+4. **Log what was detected and how it was fixed** -- never silently fix things
+5. **Never leave a known failure mode without a self-healing path**
+
+Examples:
+- If BMH cache has stale IP mappings, refresh from mkube on cache rebuild
+- If metadata cache returns no keys for a known host, trigger immediate cache rebuild
+- If AMO NATS watcher disconnects, fall back to cached data and reconnect with exponential backoff
+- If a metadata request comes from an unknown IP, return 404 but also trigger a BMH cache refresh (the host may be new)
+- If the DNAT rule isn't working (host queries directly), still serve metadata correctly based on source IP
+
+### Defensive Coding
+
+- Validate all inputs (HTTP requests, NATS messages, mkube API responses)
+- Use `Result<T>` everywhere, never `unwrap()` in production paths
+- Timeouts on all network operations
+- Graceful degradation: if AMO is down, serve from cache; if mkube is down, use cached BMH data
+- Never panic on bad data from external sources
+- Metadata endpoint must always respond (even if with empty/partial data) -- a stuck boot is worse than missing keys
+
+### Testing
+
+- Every bug fix must include a test that would have caught it
+- Integration tests for metadata endpoint with mock BMH/user data
+- Test cache rebuild under various failure conditions
+- Test offline operation (NATS down, mkube down)
+
+---
+
+## Build Instructions
+
+### Development (macOS)
+
+```bash
+cargo build
+cargo test
+cargo clippy
+```
+
+### Release Builds
+
+```bash
+# x86_64 Linux (standard Linux servers)
+cargo build --release --target x86_64-unknown-linux-musl
+
+# ARM64 Linux (MikroTik RouterOS, Storebase, ARM servers)
+cargo build --release --target aarch64-unknown-linux-musl
+```
+
+Both produce fully static binaries suitable for `scratch` containers.
+
+### Container Build
+
+```bash
+# Build binary for target platform
+CGO_ENABLED=0 cargo build --release --target aarch64-unknown-linux-musl
+
+# Build container
+podman build --platform linux/arm64 -t registry.gt.lo:5000/cloudid:edge .
+
+# Push to registry (mkube auto-updates)
+podman push --tls-verify=false registry.gt.lo:5000/cloudid:edge
+```
+
+### Cross-Compile Targets
+
+| Target | Platform | Use Case |
+|--------|----------|----------|
+| `x86_64-unknown-linux-musl` | x86_64 Linux | Standard servers, VMs |
+| `aarch64-unknown-linux-musl` | ARM64 Linux | MikroTik RouterOS containers, Storebase, ARM servers |
+
+Pure Rust, zero C dependencies, `FROM scratch` container.
+
+### Dockerfile
+
+```dockerfile
+FROM scratch
+COPY cloudid /cloudid
+COPY config.toml /etc/cloudid/config.toml
+EXPOSE 8090
+ENTRYPOINT ["/cloudid", "serve", "--config", "/etc/cloudid/config.toml"]
+```
+
+### Deploy
+
+CloudIdOperator is deployed as a container via mkube's deploy controller:
+
+```bash
+podman push --tls-verify=false registry.gt.lo:5000/cloudid:edge
+```
+
+### Host Agent Build
+
+The `cloudid-agent` binary is built from the same crate with a feature flag:
+
+```bash
+# Agent binary for CoreOS/Linux hosts (x86_64)
+cargo build --release --target x86_64-unknown-linux-musl --features agent --bin cloudid-agent
+
+# Agent binary for ARM64 hosts
+cargo build --release --target aarch64-unknown-linux-musl --features agent --bin cloudid-agent
+```
+
+---
+
+## Version Management
+
+Follow [Semantic Versioning 2.0.0](https://semver.org/).
+
+### Version Locations
+```
+Cargo.toml  -> version = "X.Y.Z"
+VERSION     -> X.Y.Z
+```
+
+---
+
+## Architecture
+
+### Key Directories
+```
+src/main.rs          -- Server entry point
+src/config.rs        -- TOML config
+src/metadata/        -- EC2-compatible metadata endpoint handlers
+src/watcher/         -- AMO (NATS) and mkube (HTTP) watchers
+src/cache/           -- In-memory metadata cache (IP -> keys precomputation)
+src/resolve/         -- IP -> hostname -> HostAccess -> users -> SSH keys pipeline
+src/agent/           -- cloudid-agent binary (periodic key refresh)
+tests/               -- Integration + unit tests
+```
+
+### Tech Stack
+- **Language**: Rust (edition 2021)
+- **Web**: axum 0.8, tokio
+- **NATS**: async-nats
+- **TLS**: rustls
+- **CLI**: clap 4
+- **Build**: musl static, `FROM scratch` container
+
+### Key Commands
+```bash
+cargo build                                    # Dev build
+cargo test                                     # Run tests
+cargo build --release --target x86_64-unknown-linux-musl    # x86_64 release
+cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
+```
+
+---
+
+## Work Plan
+
+### Current Version: `v0.0.0` (not started)
+
+### Phase 1: Scaffolding
+- [ ] Initialize Cargo project
+- [ ] TOML config parsing (AMO NATS URL, mkube URL, metadata port, domain suffix)
+- [ ] axum server skeleton with health check
+- [ ] Define shared model types (User, Group, HostAccess, HostGroup -- same as AMO)
+- [ ] Tracing/logging setup
+- [ ] Startup self-checks: verify NATS connectivity, verify mkube reachability, log warnings if unavailable
+
+### Phase 2: AMO Watcher
+- [ ] Connect to AMO's NATS JetStream KV buckets
+- [ ] Watch `AMO_USERS`, `AMO_GROUPS`, `AMO_HOSTACCESS`, `AMO_HOSTGROUPS` buckets
+- [ ] Decrypt and verify NATS payloads (X25519 + Ed25519)
+- [ ] Maintain local in-memory copies of all identity data
+- [ ] Self-healing: if NATS disconnects, serve from cache, reconnect with exponential backoff
+- [ ] Self-healing: on reconnect, request full state dump to catch missed updates
+- [ ] Consistency: compare local state hash with AMO on periodic intervals
+
+### Phase 3: BMH Watcher
+- [ ] Watch mkube for BareMetalHost objects (`/api/v1/namespaces/{ns}/baremetalhosts?watch=true`)
+- [ ] Build and maintain IP -> hostname mapping table
+- [ ] Also query DHCP lease sources for additional IP -> hostname mappings
+- [ ] Self-healing: if mkube watch disconnects, reconnect and re-list
+- [ ] Self-healing: periodically refresh full BMH list to catch missed events
+- [ ] Consistency: validate IP mappings against reverse DNS
+
+### Phase 4: Metadata Endpoint
+- [ ] EC2-compatible metadata tree (`/latest/meta-data/*`)
+- [ ] IP resolution pipeline: source IP -> hostname -> HostAccess -> users -> SSH keys
+- [ ] SSH key aggregation per system user (root, core, etc.)
+- [ ] cloud-config user-data generation (`/latest/user-data`)
+- [ ] In-memory metadata cache (precomputed per IP)
+- [ ] Cache rebuild on AMO/BMH data changes (event-driven + minimum interval)
+- [ ] Self-healing: if a request hits unknown IP, trigger BMH cache refresh
+- [ ] Self-healing: if cache is empty, serve what we have and log warning (never block boot)
+- [ ] Consistency: validate cached metadata against source data on periodic intervals
+
+### Phase 5: Host Agent
+- [ ] `cloudid-agent` binary (separate bin target, same crate)
+- [ ] `refresh` subcommand: fetch keys from metadata endpoint, update authorized_keys
+- [ ] `authorized-keys <user>` subcommand: for sshd AuthorizedKeysCommand
+- [ ] `status` subcommand: show current metadata for this host
+- [ ] Ignition config templates for CoreOS (DNAT rule + periodic timer)
+- [ ] Self-healing: if metadata endpoint unreachable, keep existing keys (never delete working keys)
+
+### Phase 6: Integration & Hardening
+- [ ] Unit tests for resolution pipeline
+- [ ] Integration tests with mock AMO data
+- [ ] Test offline operation (NATS down, mkube down)
+- [ ] Test unknown IP handling
+- [ ] Test cache rebuild under load
+- [ ] Container image (scratch, multi-arch)
+- [ ] Deploy scripts + mkube pod manifest
+- [ ] SSSD/PAM config examples for non-CoreOS Linux
+- [ ] Performance testing (metadata response latency target: <5ms)
+
+### In Progress
+<!-- - [ ] (started YYYY-MM-DD) Task description -->
+
+### Completed
+<!-- - [x] Task description -->
+
+---
+
+## Lessons Learned
+
+- **Self-healing is not optional.** Every known failure mode must have automated detection and correction. A bug that requires manual intervention will waste days. A bug that self-heals wastes minutes.
+- **Never block a boot.** The metadata endpoint must always respond, even with partial data. A machine stuck in PXE boot loop is worse than a machine with missing SSH keys.
+- **Cache is king.** Precompute everything. The metadata endpoint is on the hot path (every boot). Sub-5ms response time target.
+- **Assume disconnection.** NATS can go down. mkube can go down. AMO can go down. CloudIdOperator must serve from cache indefinitely.
+- **Log, don't crash.** Bad data from NATS, mkube, or AMO should be logged and skipped, never cause a panic.
+
+---
+
+## Reminders
+
+- Never leave work uncommitted
+- Never skip the changelog
+- Never let docs drift from code
+- Never commit secrets
+- Always add self-healing code when fixing bugs
+- Always add consistency checks at boundaries
+- Every bug fix needs a test
+- Metadata endpoint must NEVER block or crash -- always respond
+- Update this work plan before, during, and after tasks
