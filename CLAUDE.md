@@ -174,59 +174,59 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 
 ## Work Plan
 
-### Current Version: `v0.0.0` (not started)
+### Current Version: `v0.1.0`
 
 ### Phase 1: Scaffolding
-- [ ] Initialize Cargo project
-- [ ] TOML config parsing (AMO NATS URL, mkube URL, metadata port, domain suffix)
-- [ ] axum server skeleton with health check
-- [ ] Define shared model types (User, Group, HostAccess, HostGroup -- same as AMO)
-- [ ] Tracing/logging setup
-- [ ] Startup self-checks: verify NATS connectivity, verify mkube reachability, log warnings if unavailable
+- [x] Initialize Cargo project
+- [x] TOML config parsing (AMO NATS URL, mkube URL, metadata port, domain suffix)
+- [x] axum server skeleton with health check
+- [x] Define shared model types (User, Group, HostAccess, HostGroup -- same as AMO)
+- [x] Tracing/logging setup
+- [x] Startup self-checks: verify NATS connectivity, verify mkube reachability, log warnings if unavailable
 
 ### Phase 2: AMO Watcher
-- [ ] Connect to AMO's NATS JetStream KV buckets
-- [ ] Watch `AMO_USERS`, `AMO_GROUPS`, `AMO_HOSTACCESS`, `AMO_HOSTGROUPS` buckets
+- [x] Connect to AMO's NATS JetStream KV buckets
+- [x] Watch `AMO_USERS`, `AMO_GROUPS`, `AMO_HOSTACCESS`, `AMO_HOSTGROUPS` buckets
 - [ ] Decrypt and verify NATS payloads (X25519 + Ed25519)
-- [ ] Maintain local in-memory copies of all identity data
-- [ ] Self-healing: if NATS disconnects, serve from cache, reconnect with exponential backoff
-- [ ] Self-healing: on reconnect, request full state dump to catch missed updates
+- [x] Maintain local in-memory copies of all identity data
+- [x] Self-healing: if NATS disconnects, serve from cache, reconnect with exponential backoff
+- [x] Self-healing: on reconnect, request full state dump to catch missed updates
 - [ ] Consistency: compare local state hash with AMO on periodic intervals
 
 ### Phase 3: BMH Watcher
-- [ ] Watch mkube for BareMetalHost objects (`/api/v1/namespaces/{ns}/baremetalhosts?watch=true`)
-- [ ] Build and maintain IP -> hostname mapping table
-- [ ] Also query DHCP lease sources for additional IP -> hostname mappings
-- [ ] Self-healing: if mkube watch disconnects, reconnect and re-list
-- [ ] Self-healing: periodically refresh full BMH list to catch missed events
+- [x] Watch mkube for BareMetalHost objects (`/api/v1/namespaces/{ns}/baremetalhosts?watch=true`)
+- [x] Build and maintain IP -> hostname mapping table
+- [x] Also query DHCP lease sources for additional IP -> hostname mappings
+- [x] Self-healing: if mkube watch disconnects, reconnect and re-list
+- [x] Self-healing: periodically refresh full BMH list to catch missed events
 - [ ] Consistency: validate IP mappings against reverse DNS
 
 ### Phase 4: Metadata Endpoint
-- [ ] EC2-compatible metadata tree (`/latest/meta-data/*`)
-- [ ] IP resolution pipeline: source IP -> hostname -> HostAccess -> users -> SSH keys
-- [ ] SSH key aggregation per system user (root, core, etc.)
-- [ ] cloud-config user-data generation (`/latest/user-data`)
-- [ ] In-memory metadata cache (precomputed per IP)
-- [ ] Cache rebuild on AMO/BMH data changes (event-driven + minimum interval)
-- [ ] Self-healing: if a request hits unknown IP, trigger BMH cache refresh
-- [ ] Self-healing: if cache is empty, serve what we have and log warning (never block boot)
+- [x] EC2-compatible metadata tree (`/latest/meta-data/*`)
+- [x] IP resolution pipeline: source IP -> hostname -> HostAccess -> users -> SSH keys
+- [x] SSH key aggregation per system user (root, core, etc.)
+- [x] cloud-config user-data generation (`/latest/user-data`)
+- [x] In-memory metadata cache (precomputed per IP)
+- [x] Cache rebuild on AMO/BMH data changes (event-driven + minimum interval)
+- [x] Self-healing: if a request hits unknown IP, log warning
+- [x] Self-healing: if cache is empty, serve what we have and log warning (never block boot)
 - [ ] Consistency: validate cached metadata against source data on periodic intervals
 
 ### Phase 5: Host Agent
-- [ ] `cloudid-agent` binary (separate bin target, same crate)
-- [ ] `refresh` subcommand: fetch keys from metadata endpoint, update authorized_keys
-- [ ] `authorized-keys <user>` subcommand: for sshd AuthorizedKeysCommand
-- [ ] `status` subcommand: show current metadata for this host
+- [x] `cloudid-agent` binary (separate bin target, same crate)
+- [x] `refresh` subcommand: fetch keys from metadata endpoint, update authorized_keys
+- [x] `authorized-keys <user>` subcommand: for sshd AuthorizedKeysCommand
+- [x] `status` subcommand: show current metadata for this host
 - [ ] Ignition config templates for CoreOS (DNAT rule + periodic timer)
-- [ ] Self-healing: if metadata endpoint unreachable, keep existing keys (never delete working keys)
+- [x] Self-healing: if metadata endpoint unreachable, keep existing keys (never delete working keys)
 
 ### Phase 6: Integration & Hardening
-- [ ] Unit tests for resolution pipeline
+- [x] Unit tests for resolution pipeline
 - [ ] Integration tests with mock AMO data
 - [ ] Test offline operation (NATS down, mkube down)
 - [ ] Test unknown IP handling
 - [ ] Test cache rebuild under load
-- [ ] Container image (scratch, multi-arch)
+- [x] Container image (scratch)
 - [ ] Deploy scripts + mkube pod manifest
 - [ ] SSSD/PAM config examples for non-CoreOS Linux
 - [ ] Performance testing (metadata response latency target: <5ms)
@@ -235,7 +235,12 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 <!-- - [ ] (started YYYY-MM-DD) Task description -->
 
 ### Completed
-<!-- - [x] Task description -->
+- [x] Phase 1: Project scaffolding (Cargo.toml, config, models, server skeleton)
+- [x] Phase 2: AMO NATS watcher (connect, watch, initial load, reconnect)
+- [x] Phase 3: BMH HTTP watcher (list, watch, DHCP leases, periodic refresh)
+- [x] Phase 4: EC2-compatible metadata endpoint (all paths, cloud-config)
+- [x] Phase 5: cloudid-agent binary (refresh, authorized-keys, status)
+- [x] Phase 6: Dockerfile, unit tests, clippy clean
 
 ---
 
