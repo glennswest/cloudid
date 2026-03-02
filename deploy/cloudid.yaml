@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cloudid
+  namespace: infra
+  annotations:
+    vkube.io/network: gt
+    vkube.io/image-policy: auto
+    vkube.io/aliases: "cloudid"
+    vkube.io/boot-priority: "15"
+    vkube.io/depends-on: "nats"
+spec:
+  restartPolicy: Always
+  volumes:
+    - name: config
+      configMap:
+        name: cloudid-config
+  containers:
+    - name: cloudid
+      image: registry.gt.lo:5000/cloudid:edge
+      command: ["/cloudid", "serve", "--config", "/etc/cloudid/config.toml"]
+      volumeMounts:
+        - name: config
+          mountPath: /etc/cloudid
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8090
+        periodSeconds: 30
+        failureThreshold: 3
+      startupProbe:
+        httpGet:
+          path: /health
+          port: 8090
+        initialDelaySeconds: 2
+        periodSeconds: 2
+        failureThreshold: 10

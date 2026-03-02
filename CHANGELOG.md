@@ -16,3 +16,4 @@
 - **feat:** cloudid-agent binary (refresh, authorized-keys, status subcommands)
 - **feat:** Dockerfile (FROM scratch, static musl binary)
 - **feat:** Example config.toml
+- **feat:** mkube pod manifest and ConfigMap for deployment (deploy/)
