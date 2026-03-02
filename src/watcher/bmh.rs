@@ -114,12 +114,10 @@ fn apply_bmh_to_state(
         .status
         .as_ref()
         .and_then(|s| if s.ip.is_empty() { None } else { Some(&s.ip) })
-        .or_else(|| {
-            if host.spec.ip.is_empty() {
-                None
-            } else {
-                Some(&host.spec.ip)
-            }
+        .or(if host.spec.ip.is_empty() {
+            None
+        } else {
+            Some(&host.spec.ip)
         });
 
     let hostname = if host.spec.hostname.is_empty() {
@@ -169,8 +167,9 @@ async fn load_dhcp_leases(client: &reqwest::Client, state: &Arc<AppState>) {
                             }
                             if let Ok(ip) = lease.ip.parse::<IpAddr>() {
                                 // Only add if not already known from BMH
-                                if !bmh.ip_to_hostname.contains_key(&ip) {
-                                    bmh.ip_to_hostname.insert(ip, lease.hostname.clone());
+                                use std::collections::hash_map::Entry;
+                                if let Entry::Vacant(e) = bmh.ip_to_hostname.entry(ip) {
+                                    e.insert(lease.hostname.clone());
                                     added += 1;
                                 }
                             }

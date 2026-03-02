@@ -89,6 +89,11 @@ pub fn resolve_host(
         }
     }
 
+    // No enabled users with keys matched
+    if keys_by_ssh_user.is_empty() {
+        return None;
+    }
+
     // Deduplicate keys per ssh_user
     for keys in keys_by_ssh_user.values_mut() {
         keys.sort();
