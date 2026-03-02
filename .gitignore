@@ -1,0 +1,30 @@
+# Build artifacts
+target/
+dist/
+build/
+
+# Secrets and environment
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# IDE and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+tmp/
+temp/
+
+# Cargo lock (binary crate - include it)
+# Cargo.lock is committed for binary crates
