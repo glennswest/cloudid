@@ -14,6 +14,11 @@ availability_zone = "gt"
 cache_rebuild_interval_secs = 30
 dhcp_sources = ["http://dns.g10.lo:8080/api/v1/leases"]
 
+# Data networks -- CloudID ensures DHCP metadata route (169.254.169.254) on these
+[networks.g10]
+dns = "http://192.168.10.252:8080"
+gateway = "192.168.10.1"
+
 # Static identity -- works without AMO NATS
 [[static_users]]
 name = "gwest"

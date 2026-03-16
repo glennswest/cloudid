@@ -11,6 +11,19 @@ pub struct Config {
     pub static_users: Vec<StaticUserConfig>,
     #[serde(default)]
     pub static_host_access: Vec<StaticHostAccessConfig>,
+    /// Data networks where BMH hosts PXE boot.
+    /// CloudID ensures the metadata DHCP route is configured on each.
+    #[serde(default)]
+    pub networks: std::collections::HashMap<String, NetworkConfig>,
+}
+
+/// A data network with a MicroDNS instance for DHCP route management.
+#[derive(Debug, Clone, Deserialize)]
+pub struct NetworkConfig {
+    /// MicroDNS API base URL (e.g., "http://192.168.10.252:8080")
+    pub dns: String,
+    /// Network gateway IP (used for the metadata static route)
+    pub gateway: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

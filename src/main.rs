@@ -59,6 +59,12 @@ async fn main() -> Result<()> {
                 cloudid::watcher::bmh::start(bmh_state).await;
             });
 
+            // Spawn metadata route manager (ensures DHCP option 121 on data networks)
+            let networks = config.networks.clone();
+            tokio::spawn(async move {
+                cloudid::metadata_route::start(networks).await;
+            });
+
             // Start HTTP server
             let app = cloudid::metadata::router(Arc::clone(&state));
 

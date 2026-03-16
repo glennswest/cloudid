@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod config;
 pub mod metadata;
+pub mod metadata_route;
 pub mod model;
 pub mod provision;
 pub mod resolve;
