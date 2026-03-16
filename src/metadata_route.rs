@@ -45,6 +45,32 @@ struct NetworkDhcp {
     enabled: bool,
 }
 
+/// Discover data network names from mkube.
+/// Returns the list of network names where type == "data".
+pub async fn discover_data_networks(mkube_url: &str) -> anyhow::Result<Vec<String>> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(5))
+        .build()?;
+
+    let url = format!("{}/api/v1/networks", mkube_url);
+    let resp = client.get(&url).send().await?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("GET {} returned {}", url, resp.status());
+    }
+
+    let list: NetworkList = resp.json().await?;
+    let names: Vec<String> = list
+        .items
+        .iter()
+        .filter(|n| n.spec.net_type == "data")
+        .map(|n| n.metadata.name.clone())
+        .collect();
+
+    Ok(names)
+}
+
 // --- MicroDNS route types ---
 
 #[derive(Debug, Serialize)]

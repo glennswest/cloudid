@@ -6,7 +6,6 @@ nats_url = "nats://nats.gt.lo:4222"
 
 [mkube]
 url = "http://192.168.200.2:8082"
-bmh_namespaces = ["g10", "g11"]
 
 [metadata]
 domain_suffix = ".g10.lo"

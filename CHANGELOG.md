@@ -20,6 +20,8 @@
 - **build:** build.sh and deploy.sh scripts (matching microdns pattern)
 - **build:** .cargo/config.toml for ARM64 musl cross-compilation
 - **build:** Dockerfile simplified (config from ConfigMap, not baked in)
+- **refactor:** BMH namespaces auto-discovered from mkube `/api/v1/networks` (type=data), removed `bmh_namespaces` config
+- **fix:** Changed gt network type from `data` to `management` in mkube (no BMH hosts on gt)
 
 ### 2026-03-01
 - **feat:** Initial Rust project scaffolding (Cargo.toml, config, model types)

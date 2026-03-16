@@ -26,7 +26,6 @@ pub struct AmoConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct MkubeConfig {
     pub url: String,
-    pub bmh_namespaces: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

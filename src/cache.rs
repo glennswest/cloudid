@@ -42,6 +42,8 @@ pub struct AppState {
     pub identity: RwLock<IdentityState>,
     /// mkube BMH data
     pub bmh: RwLock<BmhState>,
+    /// Discovered data network namespaces (from mkube /api/v1/networks)
+    pub data_namespaces: RwLock<Vec<String>>,
     /// Application config
     pub config: Config,
 }
@@ -56,6 +58,7 @@ impl AppState {
             metadata_cache: DashMap::new(),
             identity: RwLock::new(identity),
             bmh: RwLock::new(BmhState::default()),
+            data_namespaces: RwLock::new(Vec::new()),
             config,
         });
 

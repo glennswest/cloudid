@@ -1,4 +1,5 @@
 use crate::cache::AppState;
+use crate::metadata_route;
 use crate::model::{BareMetalHostList, DhcpLease, WatchEvent};
 use anyhow::Result;
 use std::net::IpAddr;
@@ -61,14 +62,27 @@ async fn run_watcher(state: &Arc<AppState>) -> Result<()> {
     }
 }
 
+/// Discover data network namespaces from mkube and load BMH objects from each.
 async fn load_all_bmh(client: &reqwest::Client, state: &Arc<AppState>) -> Result<()> {
+    // Discover data networks dynamically from mkube
+    let namespaces = match metadata_route::discover_data_networks(&state.config.mkube.url).await {
+        Ok(ns) => {
+            info!(namespaces = ?ns, "discovered data networks for BMH loading");
+            ns
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to discover data networks, no BMH data loaded");
+            return Ok(());
+        }
+    };
+
     let mut bmh = state.bmh.write().await;
     bmh.ip_to_hostname.clear();
     bmh.host_labels.clear();
     bmh.host_namespace.clear();
     bmh.hosts.clear();
 
-    for ns in &state.config.mkube.bmh_namespaces {
+    for ns in &namespaces {
         let url = format!(
             "{}/api/v1/namespaces/{}/baremetalhosts",
             state.config.mkube.url, ns
@@ -98,6 +112,9 @@ async fn load_all_bmh(client: &reqwest::Client, state: &Arc<AppState>) -> Result
             }
         }
     }
+
+    // Store discovered namespaces for the watch phase
+    *state.data_namespaces.write().await = namespaces;
 
     info!(
         total_hosts = bmh.ip_to_hostname.len(),
@@ -192,14 +209,14 @@ async fn load_dhcp_leases(client: &reqwest::Client, state: &Arc<AppState>) {
 }
 
 async fn watch_all_namespaces(client: &reqwest::Client, state: &Arc<AppState>) -> Result<()> {
-    // Watch all configured namespaces. If any watch fails, we return the error
-    // and the outer loop will reconnect everything.
+    // Watch all discovered data network namespaces.
+    // If any watch fails, we return the error and the outer loop will reconnect everything.
+    let namespaces = state.data_namespaces.read().await.clone();
     let mut handles = Vec::new();
 
-    for ns in &state.config.mkube.bmh_namespaces {
+    for ns in namespaces {
         let client = client.clone();
         let state = state.clone();
-        let ns = ns.clone();
 
         handles.push(tokio::spawn(async move {
             watch_namespace(&client, &state, &ns).await
