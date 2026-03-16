@@ -95,10 +95,7 @@ struct DhcpPool {
     id: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct PoolsResponse {
-    pools: Vec<DhcpPool>,
-}
+// MicroDNS returns a bare JSON array for pools, not a wrapper object.
 
 /// Discover data networks from mkube and ensure the DHCP metadata route
 /// (169.254.169.254/32 via gateway) is configured on each via MicroDNS.
@@ -224,8 +221,8 @@ async fn list_pools(client: &reqwest::Client, dns_url: &str) -> anyhow::Result<V
         anyhow::bail!("GET {} returned {}", url, resp.status());
     }
 
-    let body: PoolsResponse = resp.json().await?;
-    Ok(body.pools)
+    let pools: Vec<DhcpPool> = resp.json().await?;
+    Ok(pools)
 }
 
 async fn check_route(

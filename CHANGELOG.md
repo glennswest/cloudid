@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### 2026-03-16
+- **feat:** tower-http TraceLayer for HTTP request logging (all requests logged at INFO)
+- **fix:** DHCP pool listing deserialization -- MicroDNS returns bare JSON array, not `{ pools: [...] }` wrapper
+
+### 2026-03-16
 - **feat:** Static identity config -- define users and SSH keys from .pub files (works without AMO NATS)
 - **feat:** Wildcard host matching -- `hosts = ["*"]` matches all BMH hosts
 - **feat:** Ignition v3.4.0 config generation and serving (`/config/ignition`)

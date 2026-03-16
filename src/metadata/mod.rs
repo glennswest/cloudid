@@ -4,6 +4,7 @@ use crate::cache::AppState;
 use axum::routing::get;
 use axum::Router;
 use std::sync::Arc;
+use tower_http::trace::TraceLayer;
 
 /// Build the EC2-compatible metadata router with provisioning endpoints.
 pub fn router(state: Arc<AppState>) -> Router {
@@ -55,5 +56,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/config/ignition", get(handlers::ignition_config))
         .route("/config/kickstart", get(handlers::kickstart_config))
         .route("/health", get(handlers::health))
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
