@@ -44,6 +44,7 @@ fn default_cache_interval() -> u64 {
 }
 
 /// A user defined directly in config.toml (bypass AMO for bootstrap).
+/// SSH keys are loaded from files referenced by `ssh_key_files`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct StaticUserConfig {
     pub name: String,
@@ -55,7 +56,9 @@ pub struct StaticUserConfig {
     pub shell: String,
     #[serde(default)]
     pub groups: Vec<String>,
-    pub ssh_keys: Vec<String>,
+    /// Paths to .pub key files (one key per line, like authorized_keys).
+    #[serde(default)]
+    pub ssh_key_files: Vec<String>,
 }
 
 fn default_uid() -> u32 {

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Identity data from AMO (users, groups, host access, host groups).
 #[derive(Debug, Default)]
@@ -143,17 +143,28 @@ impl AppState {
 fn load_static_identity(config: &Config) -> IdentityState {
     let mut state = IdentityState::default();
 
-    // Load static users
+    // Load static users (read SSH keys from files)
     for user_cfg in &config.static_users {
-        let ssh_keys: Vec<SshPublicKey> = user_cfg
-            .ssh_keys
-            .iter()
-            .enumerate()
-            .map(|(i, key)| SshPublicKey {
-                name: format!("static-{}", i),
-                key: key.clone(),
-            })
-            .collect();
+        let mut ssh_keys: Vec<SshPublicKey> = Vec::new();
+        for (i, path) in user_cfg.ssh_key_files.iter().enumerate() {
+            match std::fs::read_to_string(path) {
+                Ok(contents) => {
+                    for (j, line) in contents.lines().enumerate() {
+                        let line = line.trim();
+                        if line.is_empty() || line.starts_with('#') {
+                            continue;
+                        }
+                        ssh_keys.push(SshPublicKey {
+                            name: format!("file-{}-{}", i, j),
+                            key: line.to_string(),
+                        });
+                    }
+                }
+                Err(e) => {
+                    warn!(user = %user_cfg.name, path, error = %e, "failed to read SSH key file");
+                }
+            }
+        }
 
         state.users.insert(
             user_cfg.name.clone(),
