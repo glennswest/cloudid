@@ -212,6 +212,12 @@ async fn watch_all_namespaces(client: &reqwest::Client, state: &Arc<AppState>) -
     // Watch all discovered data network namespaces.
     // If any watch fails, we return the error and the outer loop will reconnect everything.
     let namespaces = state.data_namespaces.read().await.clone();
+
+    if namespaces.is_empty() {
+        warn!("no data network namespaces discovered, waiting for next refresh");
+        return Ok(());
+    }
+
     let mut handles = Vec::new();
 
     for ns in namespaces {
