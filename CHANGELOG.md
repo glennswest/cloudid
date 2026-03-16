@@ -17,6 +17,9 @@
 - **refactor:** SSH keys from .pub files instead of inline TOML
 - **docs:** MicroDNS DHCP option 121 API spec (docs/microdns-dhcp-option121-spec.md)
 - **test:** Added tests for wildcard matching, ignition generation/merge, kickstart generation/merge (8 total)
+- **build:** build.sh and deploy.sh scripts (matching microdns pattern)
+- **build:** .cargo/config.toml for ARM64 musl cross-compilation
+- **build:** Dockerfile simplified (config from ConfigMap, not baked in)
 
 ### 2026-03-01
 - **feat:** Initial Rust project scaffolding (Cargo.toml, config, model types)
