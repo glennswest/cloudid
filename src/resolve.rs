@@ -105,7 +105,7 @@ pub fn resolve_host(
         .map(|(ssh_user, keys)| PublicKeyEntry { ssh_user, keys })
         .collect();
 
-    // Build cloud-config YAML
+    // Build cloud-config
     let cloud_config = CloudConfig {
         users: cloud_config_users.into_values().collect(),
     };
@@ -124,10 +124,12 @@ pub fn resolve_host(
         availability_zone: config.availability_zone.clone(),
         public_keys,
         user_data,
+        cloud_config,
     })
 }
 
 /// Find all HostAccess rules that match a given hostname.
+/// Supports wildcard: hosts = ["*"] matches all hostnames.
 fn find_matching_rules<'a>(
     hostname: &str,
     host_labels: Option<&HashMap<String, String>>,
@@ -139,8 +141,8 @@ fn find_matching_rules<'a>(
         .filter(|rule| {
             let targets = &rule.spec.targets;
 
-            // Direct hostname match
-            if targets.hosts.iter().any(|h| h == hostname) {
+            // Direct hostname match (including wildcard)
+            if targets.hosts.iter().any(|h| h == hostname || h == "*") {
                 return true;
             }
 
@@ -320,5 +322,53 @@ mod tests {
         let result = resolve_host(ip, "server1", None, &identity, &config);
         // No enabled users -> no metadata
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_wildcard_host_match() {
+        let mut identity = make_identity();
+
+        // Add a wildcard rule
+        identity.host_access.insert(
+            "wildcard-all".to_string(),
+            Resource {
+                kind: "HostAccess".to_string(),
+                metadata: ResourceMeta {
+                    name: "wildcard-all".to_string(),
+                    namespace: String::new(),
+                    labels: HashMap::new(),
+                    annotations: HashMap::new(),
+                },
+                spec: HostAccessSpec {
+                    subjects: vec![Subject {
+                        kind: SubjectKind::User,
+                        name: "gwest".to_string(),
+                    }],
+                    targets: HostAccessTargets {
+                        hosts: vec!["*".to_string()],
+                        host_groups: vec![],
+                        host_selectors: vec![],
+                    },
+                    ssh_users: vec!["root".to_string()],
+                    sudo: true,
+                },
+                status: None,
+            },
+        );
+
+        let config = MetadataConfig {
+            domain_suffix: ".g10.lo".to_string(),
+            availability_zone: "gt".to_string(),
+            cache_rebuild_interval_secs: 30,
+            dhcp_sources: vec![],
+        };
+
+        let ip: IpAddr = "192.168.10.50".parse().unwrap();
+        let result = resolve_host(ip, "any-random-host", None, &identity, &config);
+        assert!(result.is_some());
+
+        let meta = result.unwrap();
+        assert_eq!(meta.instance_id, "any-random-host");
+        assert!(meta.public_keys.iter().any(|pk| pk.ssh_user == "root"));
     }
 }

@@ -66,6 +66,7 @@ async fn load_all_bmh(client: &reqwest::Client, state: &Arc<AppState>) -> Result
     bmh.ip_to_hostname.clear();
     bmh.host_labels.clear();
     bmh.host_namespace.clear();
+    bmh.hosts.clear();
 
     for ns in &state.config.mkube.bmh_namespaces {
         let url = format!(
@@ -135,6 +136,8 @@ fn apply_bmh_to_state(
                     .insert(hostname.to_string(), host.metadata.labels.clone());
                 bmh.host_namespace
                     .insert(hostname.to_string(), host.metadata.namespace.clone());
+                // Store full BMH data for provisioning config generation
+                bmh.hosts.insert(hostname.to_string(), host.clone());
             }
             Err(e) => {
                 warn!(ip = ip_str, hostname, error = %e, "invalid IP in BMH");
@@ -293,6 +296,7 @@ async fn handle_watch_event(event: &WatchEvent, state: &Arc<AppState>) {
             bmh.ip_to_hostname.retain(|_, h| h != hostname);
             bmh.host_labels.remove(hostname);
             bmh.host_namespace.remove(hostname);
+            bmh.hosts.remove(hostname);
             drop(bmh);
             info!(hostname, "BMH deleted via watch");
             state.rebuild_cache().await;

@@ -5,7 +5,7 @@ use axum::routing::get;
 use axum::Router;
 use std::sync::Arc;
 
-/// Build the EC2-compatible metadata router.
+/// Build the EC2-compatible metadata router with provisioning endpoints.
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(handlers::root))
@@ -51,6 +51,9 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(handlers::public_key),
         )
         .route("/latest/user-data", get(handlers::user_data))
+        // Provisioning endpoints
+        .route("/config/ignition", get(handlers::ignition_config))
+        .route("/config/kickstart", get(handlers::kickstart_config))
         .route("/health", get(handlers::health))
         .with_state(state)
 }

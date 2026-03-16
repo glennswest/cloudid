@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 2026-03-16
+- **feat:** Static identity config -- define users and SSH keys in config.toml (works without AMO NATS)
+- **feat:** Wildcard host matching -- `hosts = ["*"]` matches all BMH hosts
+- **feat:** Ignition v3.4.0 config generation and serving (`/config/ignition`)
+- **feat:** Kickstart config generation and serving (`/config/kickstart`)
+- **feat:** BMH-sourced provisioning -- ignition/kickstart base configs from BMH CRD `spec.ignition` and `spec.kickstart`
+- **feat:** SSH key merging -- identity pipeline keys merged into BMH-provided base configs
+- **feat:** On-demand resolve for provisioning endpoints (handles race conditions during PXE boot)
+- **feat:** Full BMH data storage in cache (for provisioning config generation)
+- **test:** Added tests for wildcard matching, ignition generation/merge, kickstart generation/merge (8 total)
+
 ### 2026-03-01
 - **feat:** Initial Rust project scaffolding (Cargo.toml, config, model types)
 - **feat:** axum server skeleton with health check endpoint

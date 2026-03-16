@@ -217,7 +217,9 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 - [x] `refresh` subcommand: fetch keys from metadata endpoint, update authorized_keys
 - [x] `authorized-keys <user>` subcommand: for sshd AuthorizedKeysCommand
 - [x] `status` subcommand: show current metadata for this host
-- [ ] Ignition config templates for CoreOS (DNAT rule + periodic timer)
+- [x] Ignition config serving (`/config/ignition`) -- base from BMH CRD, SSH keys merged
+- [x] Kickstart config serving (`/config/kickstart`) -- base from BMH CRD, SSH keys merged
+- [ ] Ignition DNAT rule + periodic timer systemd units
 - [x] Self-healing: if metadata endpoint unreachable, keep existing keys (never delete working keys)
 
 ### Phase 6: Integration & Hardening
@@ -241,6 +243,9 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 - [x] Phase 4: EC2-compatible metadata endpoint (all paths, cloud-config)
 - [x] Phase 5: cloudid-agent binary (refresh, authorized-keys, status)
 - [x] Phase 6: Dockerfile, unit tests, clippy clean
+- [x] Static identity config (SSH keys in config.toml, works without AMO)
+- [x] Ignition/kickstart provisioning (BMH CRD base config + SSH key merge)
+- [x] Wildcard host matching for static access rules
 
 ---
 

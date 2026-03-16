@@ -174,6 +174,12 @@ pub struct BmhSpec {
     pub hostname: String,
     #[serde(default)]
     pub bmc: Option<BmhBmc>,
+    /// Base Ignition v3 config JSON (from BMH CRD). CloudID merges SSH keys into this.
+    #[serde(default)]
+    pub ignition: Option<serde_json::Value>,
+    /// Base kickstart config text (from BMH CRD). CloudID merges SSH keys into this.
+    #[serde(default)]
+    pub kickstart: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -237,6 +243,8 @@ pub struct HostMetadata {
     pub availability_zone: String,
     pub public_keys: Vec<PublicKeyEntry>,
     pub user_data: String,
+    /// Structured cloud-config for ignition/kickstart generation.
+    pub cloud_config: CloudConfig,
 }
 
 /// User account entry for cloud-config user-data.

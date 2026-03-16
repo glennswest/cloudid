@@ -1,10 +1,11 @@
 use crate::cache::AppState;
+use crate::provision;
 use axum::extract::{ConnectInfo, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 type AppResponse = Result<String, StatusCode>;
 
@@ -115,6 +116,65 @@ pub async fn user_data(
     Ok(meta.user_data)
 }
 
+/// Serve Ignition v3 config for the requesting host.
+///
+/// If the BMH has a base ignition config in `spec.ignition`, SSH keys from
+/// the identity pipeline are merged into it. Otherwise a default config is generated.
+pub async fn ignition_config(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<(StatusCode, [(axum::http::header::HeaderName, &'static str); 1], String), StatusCode> {
+    let ip = get_source_ip(&addr);
+
+    // Use on-demand resolve for provisioning (more robust during initial boot)
+    let meta = match state.resolve_on_demand(&ip).await {
+        Some(m) => m,
+        None => {
+            warn!(%ip, "ignition request from unknown IP");
+            return Err(StatusCode::NOT_FOUND);
+        }
+    };
+
+    let bmh = state.get_bmh(&meta.local_hostname).await;
+    let config = provision::build_ignition(&meta, bmh.as_ref());
+
+    info!(%ip, host = %meta.local_hostname, "serving ignition config");
+    Ok((
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        config,
+    ))
+}
+
+/// Serve kickstart config for the requesting host.
+///
+/// If the BMH has a base kickstart config in `spec.kickstart`, SSH keys from
+/// the identity pipeline are merged into it. Otherwise a default config is generated.
+pub async fn kickstart_config(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<(StatusCode, [(axum::http::header::HeaderName, &'static str); 1], String), StatusCode> {
+    let ip = get_source_ip(&addr);
+
+    let meta = match state.resolve_on_demand(&ip).await {
+        Some(m) => m,
+        None => {
+            warn!(%ip, "kickstart request from unknown IP");
+            return Err(StatusCode::NOT_FOUND);
+        }
+    };
+
+    let bmh = state.get_bmh(&meta.local_hostname).await;
+    let config = provision::build_kickstart(&meta, bmh.as_ref());
+
+    info!(%ip, host = %meta.local_hostname, "serving kickstart config");
+    Ok((
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/plain")],
+        config,
+    ))
+}
+
 pub async fn health() -> impl IntoResponse {
     (StatusCode::OK, "ok")
 }
@@ -130,8 +190,6 @@ fn lookup_or_404(
         }
         None => {
             warn!(%ip, "metadata request from unknown IP");
-            // Self-healing: unknown IP triggers async BMH refresh
-            // (handled by the caller/middleware if needed)
             Err(StatusCode::NOT_FOUND)
         }
     }

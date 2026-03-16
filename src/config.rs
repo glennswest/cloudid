@@ -7,6 +7,10 @@ pub struct Config {
     pub amo: AmoConfig,
     pub mkube: MkubeConfig,
     pub metadata: MetadataConfig,
+    #[serde(default)]
+    pub static_users: Vec<StaticUserConfig>,
+    #[serde(default)]
+    pub static_host_access: Vec<StaticHostAccessConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -37,6 +41,42 @@ pub struct MetadataConfig {
 
 fn default_cache_interval() -> u64 {
     30
+}
+
+/// A user defined directly in config.toml (bypass AMO for bootstrap).
+#[derive(Debug, Clone, Deserialize)]
+pub struct StaticUserConfig {
+    pub name: String,
+    #[serde(default = "default_uid")]
+    pub uid: u32,
+    #[serde(default)]
+    pub gid: u32,
+    #[serde(default = "default_shell")]
+    pub shell: String,
+    #[serde(default)]
+    pub groups: Vec<String>,
+    pub ssh_keys: Vec<String>,
+}
+
+fn default_uid() -> u32 {
+    1000
+}
+
+fn default_shell() -> String {
+    "/bin/bash".to_string()
+}
+
+/// A host access rule defined directly in config.toml.
+/// Use hosts = ["*"] to match all known BMH hosts.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StaticHostAccessConfig {
+    pub ssh_users: Vec<String>,
+    #[serde(default)]
+    pub hosts: Vec<String>,
+    #[serde(default)]
+    pub users: Vec<String>,
+    #[serde(default)]
+    pub sudo: bool,
 }
 
 impl Config {
