@@ -1,19 +1,23 @@
 # CloudIdOperator
 
-Afterburn-compatible metadata service for provisioning SSH keys and user accounts to bare metal hosts.
+Afterburn-compatible metadata service for provisioning SSH keys, user accounts, Ignition configs, and kickstart configs to bare metal hosts.
 
 ## Overview
 
-CloudIdOperator serves SSH keys, hostnames, and user account data to CoreOS, Linux, and Windows machines on boot. It watches AMO (Associate Manager Operator) for user/group/access changes and mkube for BareMetalHost data, then resolves incoming metadata requests by source IP to determine which users have access to which hosts.
+CloudIdOperator serves SSH keys, hostnames, user account data, and provisioning configs to CoreOS and Linux machines on boot. It watches AMO (Associate Manager Operator) for user/group/access changes and mkube for BareMetalHost data, then resolves incoming metadata requests by source IP to determine which users have access to which hosts.
 
 ### What CloudIdOperator Does
 
 - **EC2-Compatible Metadata Endpoint** -- serves instance metadata at `/latest/meta-data/` (port 8090), compatible with Afterburn on Fedora CoreOS
-- **SSH Key Aggregation** -- resolves source IP -> hostname -> org -> HostAccess rules -> users -> SSH keys
+- **SSH Key Aggregation** -- resolves source IP -> hostname -> HostAccess rules -> users -> SSH keys
 - **cloud-config Generation** -- serves `/latest/user-data` with Unix user accounts, groups, sudo, and SSH keys
+- **Ignition Config** -- serves `/config/ignition` with Ignition v3.4.0 JSON, merging SSH keys from identity into BMH-provided base configs
+- **Kickstart Config** -- serves `/config/kickstart` with kickstart text, merging SSH keys from identity into BMH-provided base configs
+- **Static Identity** -- SSH keys from `.pub` files in config, works without AMO NATS for bootstrap
 - **BMH Integration** -- watches mkube for BareMetalHost objects to maintain IP-to-hostname mappings
 - **AMO Watcher** -- watches AMO via NATS for real-time user/group/access updates
 - **Metadata Cache** -- precomputes per-host metadata for instant response on boot
+- **DHCP Route Auto-Config** -- discovers data networks from mkube and configures DHCP option 121 on each MicroDNS so hosts route `169.254.169.254` to CloudID via their gateway
 - **Host Agent** -- optional `cloudid-agent` binary for periodic SSH key refresh on running hosts
 
 ### What CloudIdOperator Does NOT Do
@@ -25,22 +29,27 @@ CloudIdOperator serves SSH keys, hostnames, and user account data to CoreOS, Lin
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│         CloudIdOperator              │
-│                                     │
-│  ┌─────────────┐  ┌──────────────┐ │
-│  │ EC2 Metadata│  │   Watchers   │ │
-│  │   :8090     │  │              │ │
-│  └──────┬──────┘  │ AMO (NATS)   │ │
-│         │         │ mkube (HTTP) │ │
-│  ┌──────▼──────┐  └──────┬───────┘ │
-│  │  Metadata   │◄────────┘         │
-│  │   Cache     │                   │
-│  │ (IP->keys)  │                   │
-│  └─────────────┘                   │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│           CloudIdOperator                │
+│                                          │
+│  ┌──────────────┐  ┌─────────────────┐  │
+│  │ EC2 Metadata │  │    Watchers     │  │
+│  │   :8090      │  │                 │  │
+│  ├──────────────┤  │ AMO (NATS)      │  │
+│  │ /config/     │  │ mkube (HTTP)    │  │
+│  │  ignition    │  │ Networks (HTTP) │  │
+│  │  kickstart   │  └────────┬────────┘  │
+│  └──────┬───────┘           │           │
+│  ┌──────▼───────┐           │           │
+│  │  Metadata    │◄──────────┘           │
+│  │   Cache      │                       │
+│  │ (IP->keys)   │  ┌─────────────────┐  │
+│  └──────────────┘  │ DHCP Route Mgr  │  │
+│                    │ (MicroDNS API)  │  │
+│                    └─────────────────┘  │
+└──────────────────────────────────────────┘
          ▲
-         │ HTTP (source IP identification)
+         │ 169.254.169.254:80 (DNAT via MikroTik)
          │
 ┌────────┴────────┐
 │  CoreOS / Linux │
@@ -53,13 +62,22 @@ CloudIdOperator serves SSH keys, hostnames, and user account data to CoreOS, Lin
 
 ### Boot-Time Flow
 
-1. Host PXE boots via pxemanager, gets CoreOS with Ignition config
-2. Ignition config includes iptables DNAT rule: `169.254.169.254:80` -> `cloudid.g10.lo:8090`
-3. Afterburn queries `http://169.254.169.254/latest/meta-data/public-keys/` on first boot
-4. CloudIdOperator receives request, identifies host by source IP
-5. Resolves: source IP -> BMH hostname -> HostAccess rules -> users -> SSH keys
-6. Returns aggregated SSH keys for each system user (root, core, etc.)
-7. Afterburn writes keys to `~user/.ssh/authorized_keys.d/afterburn`
+1. Host PXE boots, gets DHCP lease with option 121 route (`169.254.169.254/32 via gateway`)
+2. MikroTik DNAT redirects `169.254.169.254:80` to `CloudID:8090`
+3. For CoreOS: Afterburn queries `http://169.254.169.254/latest/meta-data/public-keys/`
+4. For Ignition: fetches config from `http://169.254.169.254/config/ignition`
+5. For kickstart: anaconda fetches from `http://169.254.169.254/config/kickstart`
+6. CloudIdOperator identifies host by source IP, resolves access rules, returns metadata
+
+### Metadata Discovery (169.254.169.254)
+
+Hosts discover CloudID at the standard cloud metadata address without kernel args:
+
+1. **DHCP option 121** -- CloudID auto-configures MicroDNS on each data network to push a static route for `169.254.169.254/32` via the network gateway
+2. **MikroTik DNAT** -- one global rule redirects `169.254.169.254:80` to CloudID at `192.168.200.20:8090`
+3. **Network discovery** -- CloudID queries mkube `/api/v1/networks`, finds all `type=data` networks with DHCP enabled, and configures routes automatically
+
+No per-network router configuration. Adding a new data network in mkube is all that's needed.
 
 ### Resolution Pipeline
 
@@ -74,7 +92,7 @@ Step 1: IP -> Hostname
     ▼
 Step 2: Hostname -> HostAccess
     Find all HostAccess rules where:
-    - hosts[] contains "server1", OR
+    - hosts[] contains "server1" (or "*" wildcard), OR
     - hostGroups[] references a group containing "server1", OR
     - hostSelectors[] match server1's BMH labels
     │
@@ -89,11 +107,13 @@ Step 4: Serve Metadata
     /latest/meta-data/public-keys/0/openssh-key -> root's aggregated keys
     /latest/meta-data/public-keys/1/openssh-key -> core's aggregated keys
     /latest/user-data -> cloud-config YAML with user accounts
+    /config/ignition -> Ignition v3.4.0 JSON with users + SSH keys
+    /config/kickstart -> kickstart text with users + SSH keys
 ```
 
-## EC2-Compatible Metadata Endpoint
+## Endpoints
 
-Port 8090 serves the standard EC2 instance metadata tree:
+### EC2-Compatible Metadata (port 8090)
 
 ```
 GET /latest/meta-data/                          -> directory listing
@@ -102,11 +122,50 @@ GET /latest/meta-data/hostname                  -> "server1.g10.lo"
 GET /latest/meta-data/local-hostname            -> "server1"
 GET /latest/meta-data/local-ipv4                -> "192.168.10.10"
 GET /latest/meta-data/placement/availability-zone -> "gt" (cluster name)
-GET /latest/meta-data/public-keys/              -> "0=root\n1=core\n2=gwest"
+GET /latest/meta-data/public-keys/              -> "0=root\n1=core\n"
 GET /latest/meta-data/public-keys/0/openssh-key -> SSH keys for root user
 GET /latest/meta-data/public-keys/1/openssh-key -> SSH keys for core user
 GET /latest/user-data                           -> cloud-config YAML
+GET /health                                     -> "ok"
 ```
+
+### Provisioning Endpoints
+
+```
+GET /config/ignition   -> Ignition v3.4.0 JSON (Content-Type: application/json)
+GET /config/kickstart  -> Kickstart text (Content-Type: text/plain)
+```
+
+Both endpoints resolve the host by source IP and merge SSH keys from the identity pipeline into the base config from the BMH CRD. If no base config exists on the BMH, a default is generated.
+
+### BMH CRD Provisioning Config
+
+BareMetalHost objects in mkube can carry base provisioning configs:
+
+```yaml
+apiVersion: v1
+kind: BareMetalHost
+metadata:
+  name: server1
+  namespace: g10
+spec:
+  hostname: server1
+  ip: 192.168.10.10
+  bootMacAddress: "ac:1f:6b:8a:a7:9c"
+  image: fedora-coreos-40
+  network: g10
+  ignition:
+    ignition:
+      version: "3.4.0"
+    storage:
+      files:
+        - path: /etc/sysctl.d/custom.conf
+          contents:
+            source: "data:,vm.swappiness=10"
+          mode: 420
+```
+
+CloudID reads `spec.ignition` (JSON) or `spec.kickstart` (text) from the BMH, merges SSH keys and user accounts from the identity pipeline, and serves the result. The BMH carries platform config (storage, network, packages); CloudID injects identity (users, SSH keys, sudo).
 
 ### User Data (cloud-config)
 
@@ -115,40 +174,68 @@ GET /latest/user-data                           -> cloud-config YAML
 users:
   - name: gwest
     uid: "1000"
-    groups: [wheel, engineering]
+    groups: [wheel]
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
     ssh_authorized_keys:
       - ssh-rsa AAAA...key gwest@macbook
 ```
 
-## CoreOS Integration
+## Configuration
 
-### Ignition Config (DNAT Redirect)
+```toml
+[server]
+metadata_addr = "0.0.0.0:8090"
 
-Add to the Butane config for CoreOS machines:
+[amo]
+nats_url = "nats://nats.gt.lo:4222"
 
-```yaml
-systemd:
-  units:
-    - name: cloudid-metadata-redirect.service
-      enabled: true
-      contents: |
-        [Unit]
-        Description=Redirect metadata queries to CloudIdOperator
-        Before=afterburn-sshkeys@.service
-        After=network-online.target
+[mkube]
+url = "http://192.168.200.2:8082"
+bmh_namespaces = ["g10", "g11"]
 
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        ExecStart=/usr/sbin/iptables -t nat -A OUTPUT -d 169.254.169.254/32 -p tcp --dport 80 -j DNAT --to-destination 192.168.10.201:8090
+[metadata]
+domain_suffix = ".g10.lo"
+availability_zone = "gt"
+cache_rebuild_interval_secs = 30
+dhcp_sources = ["http://dns.g10.lo:8080/api/v1/leases"]
 
-        [Install]
-        WantedBy=multi-user.target
+# Static identity -- works without AMO NATS
+[[static_users]]
+name = "gwest"
+uid = 1000
+gid = 1000
+shell = "/bin/bash"
+groups = ["wheel"]
+ssh_key_files = ["/etc/cloudid/gwest.pub"]
+
+# Grant access to all BMH hosts as root and core
+[[static_host_access]]
+ssh_users = ["root", "core"]
+hosts = ["*"]
+users = ["gwest"]
+sudo = true
 ```
 
-Use `ignition.platform.id=aws` in kernel args and Afterburn handles SSH key provisioning natively.
+### Static Identity
+
+SSH keys are loaded from `.pub` files (authorized_keys format, one key per line). This provides a bootstrap path that works without AMO NATS:
+
+- Define users with `[[static_users]]` and reference their `.pub` key files
+- Define access rules with `[[static_host_access]]` -- use `hosts = ["*"]` for all BMH hosts
+- When AMO connects, its data overlays on top of static config
+- Multiple users supported, each with their own key files and access rules
+
+### Network Auto-Discovery
+
+CloudID discovers data networks from mkube automatically -- no network config needed:
+
+1. Queries `GET /api/v1/networks` from mkube on startup
+2. Filters for `type=data` networks with DHCP enabled
+3. Calls each network's MicroDNS to add DHCP option 121 (classless static route) for `169.254.169.254/32 via gateway`
+4. Re-checks every 5 minutes (self-healing)
+
+## CoreOS Integration
 
 ### Periodic Key Refresh
 
@@ -179,11 +266,9 @@ systemd:
         ExecStart=/usr/local/bin/cloudid-agent refresh
 ```
 
-## Linux Integration (SSSD)
+## Linux Integration
 
-For non-CoreOS Linux hosts, use SSSD pointing to AMO's LDAP server. CloudIdOperator is not needed in this case -- SSSD handles user resolution and SSH key retrieval via LDAP directly.
-
-However, CloudIdOperator can still be used as a lightweight alternative (no SSSD dependency):
+For non-CoreOS Linux hosts, use sshd's AuthorizedKeysCommand:
 
 ```
 # /etc/ssh/sshd_config
@@ -206,11 +291,36 @@ cloudid-agent authorized-keys root
 cloudid-agent status
 ```
 
-Configuration via environment or config file:
+Configuration via environment:
 ```
-CLOUDID_METADATA_URL=http://cloudid.g10.lo:8090
-CLOUDID_REFRESH_INTERVAL=5m
+CLOUDID_METADATA_URL=http://169.254.169.254
 ```
+
+## Deploy
+
+CloudIdOperator runs as a container managed by mkube's deploy controller at `192.168.200.20` on the gt network.
+
+```bash
+# Build
+cargo build --release --target x86_64-unknown-linux-musl
+
+# Container
+podman build --platform linux/arm64 -t registry.gt.lo:5000/cloudid:edge .
+podman push --tls-verify=false registry.gt.lo:5000/cloudid:edge
+```
+
+### Prerequisites
+
+One-time MikroTik DNAT rule (already configured):
+```
+/ip firewall nat add chain=dstnat dst-address=169.254.169.254 protocol=tcp dst-port=80 action=dst-nat to-addresses=192.168.200.20 to-ports=8090 comment="cloudid metadata redirect"
+```
+
+### Ports
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 8090 | HTTP | EC2-compatible metadata + provisioning endpoints |
 
 ## Redundancy
 
@@ -218,9 +328,8 @@ CLOUDID_REFRESH_INTERVAL=5m
 - Watches AMO via NATS for user/access changes
 - Watches local mkube for BMH data
 - Precomputes metadata cache in memory
-- If AMO is unreachable, serves from last-known cache (offline-capable)
+- If AMO is unreachable, serves from static config and last-known cache (offline-capable)
 - Deploy controller (mkube) manages lifecycle and health checks
-- Can run co-located with AMO or standalone
 
 ## Tech Stack
 
@@ -231,61 +340,6 @@ CLOUDID_REFRESH_INTERVAL=5m
 - **CLI**: clap 4
 - **Container**: `FROM scratch` (fully static musl binary)
 
-## Build
-
-```bash
-# x86_64 Linux (musl static)
-cargo build --release --target x86_64-unknown-linux-musl
-
-# ARM64 Linux (MikroTik, Storebase)
-cargo build --release --target aarch64-unknown-linux-musl
-
-# Container (scratch)
-podman build --platform linux/arm64 -t registry.gt.lo:5000/cloudid:edge .
-podman push --tls-verify=false registry.gt.lo:5000/cloudid:edge
-
-# macOS development
-cargo build
-cargo test
-```
-
-## Deploy
-
-CloudIdOperator runs as a container managed by mkube's deploy controller.
-
-```bash
-# Push to registry -- mkube auto-updates the pod
-podman push --tls-verify=false registry.gt.lo:5000/cloudid:edge
-```
-
-### Ports
-
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 8090 | HTTP | EC2-compatible metadata endpoint |
-
-## Configuration
-
-```toml
-# cloudid.toml
-[server]
-metadata_addr = "0.0.0.0:8090"
-
-[amo]
-nats_url = "nats://nats.gt.lo:4222"
-
-[mkube]
-url = "http://192.168.200.2:8082"
-bmh_namespaces = ["g10", "g11"]
-
-[metadata]
-domain_suffix = ".g10.lo"
-cache_rebuild_interval_secs = 30
-dhcp_sources = ["http://dns.g10.lo:8080/api/v1/leases"]
-```
-
 ## Relationship to AMO
 
-CloudIdOperator reads identity data from AMO. AMO is the source of truth for users, orgs, groups, and access policies. CloudIdOperator transforms that data into machine-consumable metadata (SSH keys, cloud-config, EC2 metadata tree) and serves it to hosts on boot and periodically.
-
-See the [AMO README](../amo/README.md) for the identity management system.
+CloudIdOperator reads identity data from AMO. AMO is the source of truth for users, orgs, groups, and access policies. CloudIdOperator transforms that data into machine-consumable metadata (SSH keys, cloud-config, Ignition, kickstart) and serves it to hosts on boot and periodically.
