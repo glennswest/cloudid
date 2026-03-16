@@ -1,11 +1,29 @@
 mod handlers;
 
 use crate::cache::AppState;
+use axum::extract::ConnectInfo;
+use axum::middleware;
 use axum::routing::get;
 use axum::Router;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer};
-use tracing::Level;
+
+async fn access_log(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: axum::http::Request<axum::body::Body>,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let ip = addr.ip();
+    let resp = next.run(req).await;
+    let status = resp.status().as_u16();
+    // Skip health probes to reduce noise
+    if uri.path() != "/health" {
+        tracing::info!(%ip, %method, path = %uri, status, "request");
+    }
+    resp
+}
 
 /// Build the EC2-compatible metadata router with provisioning endpoints.
 pub fn router(state: Arc<AppState>) -> Router {
@@ -57,10 +75,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/config/ignition", get(handlers::ignition_config))
         .route("/config/kickstart", get(handlers::kickstart_config))
         .route("/health", get(handlers::health))
-        .layer(
-            TraceLayer::new_for_http()
-                .on_request(DefaultOnRequest::new().level(Level::INFO))
-                .on_response(DefaultOnResponse::new().level(Level::INFO)),
-        )
+        .layer(middleware::from_fn(access_log))
         .with_state(state)
 }
