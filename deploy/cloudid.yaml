@@ -9,6 +9,7 @@ metadata:
     vkube.io/aliases: "cloudid"
     vkube.io/boot-priority: "15"
     vkube.io/depends-on: "nats"
+    vkube.io/static-ip: "192.168.200.20"
 spec:
   restartPolicy: Always
   volumes:

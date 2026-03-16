@@ -1,11 +1,51 @@
-use crate::config::NetworkConfig;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 const METADATA_IP: &str = "169.254.169.254/32";
 const MANAGED_BY: &str = "cloudid";
+
+// --- mkube Network types ---
+
+#[derive(Debug, Deserialize)]
+struct NetworkList {
+    items: Vec<Network>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Network {
+    metadata: NetworkMeta,
+    spec: NetworkSpec,
+}
+
+#[derive(Debug, Deserialize)]
+struct NetworkMeta {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NetworkSpec {
+    #[serde(rename = "type")]
+    net_type: String,
+    gateway: String,
+    #[serde(default)]
+    dns: Option<NetworkDns>,
+    #[serde(default)]
+    dhcp: Option<NetworkDhcp>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NetworkDns {
+    endpoint: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NetworkDhcp {
+    #[serde(default)]
+    enabled: bool,
+}
+
+// --- MicroDNS route types ---
 
 #[derive(Debug, Serialize)]
 struct RouteRequest {
@@ -16,13 +56,7 @@ struct RouteRequest {
 
 #[derive(Debug, Deserialize)]
 struct RouteEntry {
-    #[allow(dead_code)]
-    id: String,
     destination: String,
-    #[allow(dead_code)]
-    gateway: String,
-    #[allow(dead_code)]
-    managed_by: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,8 +67,6 @@ struct RoutesResponse {
 #[derive(Debug, Deserialize)]
 struct DhcpPool {
     id: String,
-    #[allow(dead_code)]
-    subnet: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,41 +74,91 @@ struct PoolsResponse {
     pools: Vec<DhcpPool>,
 }
 
-/// Ensure the metadata DHCP route (169.254.169.254/32 via gateway) is configured
-/// on each data network's MicroDNS. Runs on startup and periodically.
-pub async fn start(networks: HashMap<String, NetworkConfig>) {
-    if networks.is_empty() {
-        info!("no data networks configured, skipping metadata route setup");
-        return;
-    }
-
+/// Discover data networks from mkube and ensure the DHCP metadata route
+/// (169.254.169.254/32 via gateway) is configured on each via MicroDNS.
+pub async fn start(mkube_url: String) {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .connect_timeout(Duration::from_secs(5))
         .build()
         .expect("failed to build HTTP client");
 
-    // Initial setup
-    for (name, net) in &networks {
-        ensure_route(&client, name, net).await;
+    // Initial setup with retry
+    let mut backoff = Duration::from_secs(2);
+    loop {
+        match discover_and_configure(&client, &mkube_url).await {
+            Ok(count) => {
+                info!(networks = count, "metadata routes configured");
+                break;
+            }
+            Err(e) => {
+                warn!(error = %e, backoff_secs = backoff.as_secs(), "metadata route setup failed, retrying");
+                sleep(backoff).await;
+                backoff = (backoff * 2).min(Duration::from_secs(60));
+            }
+        }
     }
 
     // Periodic verification (self-healing)
-    let interval = Duration::from_secs(300); // every 5 minutes
+    let interval = Duration::from_secs(300);
     loop {
         sleep(interval).await;
-        for (name, net) in &networks {
-            ensure_route(&client, name, net).await;
+        if let Err(e) = discover_and_configure(&client, &mkube_url).await {
+            warn!(error = %e, "periodic metadata route check failed");
         }
     }
 }
 
+/// Discover data networks from mkube and ensure routes on each.
+/// Returns the number of networks configured.
+async fn discover_and_configure(
+    client: &reqwest::Client,
+    mkube_url: &str,
+) -> anyhow::Result<usize> {
+    let url = format!("{}/api/v1/networks", mkube_url);
+    let resp = client.get(&url).send().await?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("GET {} returned {}", url, resp.status());
+    }
+
+    let list: NetworkList = resp.json().await?;
+    let mut count = 0;
+
+    for net in &list.items {
+        // Only data networks with DHCP enabled need the metadata route
+        let dhcp_enabled = net.spec.dhcp.as_ref().map(|d| d.enabled).unwrap_or(false);
+        if net.spec.net_type != "data" || !dhcp_enabled {
+            debug!(network = %net.metadata.name, net_type = %net.spec.net_type, "skipping non-data network");
+            continue;
+        }
+
+        let dns_endpoint = match &net.spec.dns {
+            Some(dns) => &dns.endpoint,
+            None => {
+                warn!(network = %net.metadata.name, "data network has no DNS endpoint");
+                continue;
+            }
+        };
+
+        ensure_route(client, &net.metadata.name, dns_endpoint, &net.spec.gateway).await;
+        count += 1;
+    }
+
+    Ok(count)
+}
+
 /// Ensure the metadata route exists on a network's MicroDNS DHCP pools.
-async fn ensure_route(client: &reqwest::Client, network: &str, net: &NetworkConfig) {
-    let pools = match list_pools(client, &net.dns).await {
+async fn ensure_route(
+    client: &reqwest::Client,
+    network: &str,
+    dns_endpoint: &str,
+    gateway: &str,
+) {
+    let pools = match list_pools(client, dns_endpoint).await {
         Ok(p) => p,
         Err(e) => {
-            warn!(network, dns = %net.dns, error = %e, "failed to list DHCP pools");
+            warn!(network, dns = %dns_endpoint, error = %e, "failed to list DHCP pools");
             return;
         }
     };
@@ -87,14 +169,14 @@ async fn ensure_route(client: &reqwest::Client, network: &str, net: &NetworkConf
     }
 
     for pool in &pools {
-        match check_route(client, &net.dns, &pool.id).await {
+        match check_route(client, dns_endpoint, &pool.id).await {
             Ok(true) => {
-                info!(network, pool = %pool.id, "metadata route already configured");
+                debug!(network, pool = %pool.id, "metadata route present");
             }
             Ok(false) => {
-                match add_route(client, &net.dns, &pool.id, &net.gateway).await {
+                match add_route(client, dns_endpoint, &pool.id, gateway).await {
                     Ok(()) => {
-                        info!(network, pool = %pool.id, gateway = %net.gateway, "metadata route added");
+                        info!(network, pool = %pool.id, gateway, "metadata route added");
                     }
                     Err(e) => {
                         error!(network, pool = %pool.id, error = %e, "failed to add metadata route");

@@ -59,10 +59,11 @@ async fn main() -> Result<()> {
                 cloudid::watcher::bmh::start(bmh_state).await;
             });
 
-            // Spawn metadata route manager (ensures DHCP option 121 on data networks)
-            let networks = config.networks.clone();
+            // Spawn metadata route manager (discovers data networks from mkube,
+            // ensures DHCP option 121 routes 169.254.169.254 via gateway)
+            let mkube_url = config.mkube.url.clone();
             tokio::spawn(async move {
-                cloudid::metadata_route::start(networks).await;
+                cloudid::metadata_route::start(mkube_url).await;
             });
 
             // Start HTTP server
