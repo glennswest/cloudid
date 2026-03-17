@@ -9,8 +9,28 @@ use dashmap::DashMap;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
+
+/// IMDSv2 token entry with expiration.
+#[derive(Debug, Clone)]
+pub struct ImdsToken {
+    pub token: String,
+    pub ip: IpAddr,
+    pub ttl_secs: u32,
+    pub created_at: u64,
+}
+
+impl ImdsToken {
+    pub fn is_expired(&self) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now > self.created_at + self.ttl_secs as u64
+    }
+}
 
 /// Identity data from AMO (users, groups, host access, host groups).
 #[derive(Debug, Default)]
@@ -38,6 +58,8 @@ pub struct BmhState {
 pub struct AppState {
     /// Precomputed metadata cache: IP -> HostMetadata
     pub metadata_cache: DashMap<IpAddr, HostMetadata>,
+    /// IMDSv2 tokens: token string -> ImdsToken
+    pub imds_tokens: DashMap<String, ImdsToken>,
     /// AMO identity data
     pub identity: RwLock<IdentityState>,
     /// mkube BMH data
@@ -46,6 +68,8 @@ pub struct AppState {
     pub data_namespaces: RwLock<Vec<String>>,
     /// Application config
     pub config: Config,
+    /// Counter for generating unique tokens
+    token_counter: std::sync::atomic::AtomicU64,
 }
 
 impl AppState {
@@ -56,10 +80,12 @@ impl AppState {
 
         let state = Arc::new(Self {
             metadata_cache: DashMap::new(),
+            imds_tokens: DashMap::new(),
             identity: RwLock::new(identity),
             bmh: RwLock::new(BmhState::default()),
             data_namespaces: RwLock::new(Vec::new()),
             config,
+            token_counter: std::sync::atomic::AtomicU64::new(1),
         });
 
         if count > 0 {
@@ -133,6 +159,41 @@ impl AppState {
     pub async fn get_bmh(&self, hostname: &str) -> Option<BareMetalHost> {
         let bmh = self.bmh.read().await;
         bmh.hosts.get(hostname).cloned()
+    }
+
+    /// Generate an IMDSv2 token for a host IP.
+    pub fn generate_imds_token(&self, ip: IpAddr, ttl_secs: u32) -> String {
+        let seq = self
+            .token_counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let token = format!("cloudid-{:016x}-{:08x}", now, seq);
+
+        self.imds_tokens.insert(
+            token.clone(),
+            ImdsToken {
+                token: token.clone(),
+                ip,
+                ttl_secs,
+                created_at: now,
+            },
+        );
+
+        // Prune expired tokens (lazy cleanup)
+        self.imds_tokens.retain(|_, t| !t.is_expired());
+
+        token
+    }
+
+    /// Validate an IMDSv2 token. Returns the associated IP if valid.
+    pub fn validate_imds_token(&self, token: &str) -> Option<IpAddr> {
+        self.imds_tokens
+            .get(token)
+            .filter(|t| !t.is_expired())
+            .map(|t| t.ip)
     }
 
     /// Trigger a BMH cache refresh if we get a request from an unknown IP.

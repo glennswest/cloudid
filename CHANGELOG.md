@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
-### 2026-03-16
-- **feat:** tower-http TraceLayer for HTTP request logging (all requests logged at INFO)
-- **fix:** DHCP pool listing deserialization -- MicroDNS returns bare JSON array, not `{ pools: [...] }` wrapper
+### 2026-03-17
+- **feat:** EC2 IMDSv2 support — PUT /latest/api/token with per-host token generation and storage
+- **feat:** Instance identity document — GET /latest/dynamic/instance-identity/document (JSON)
+- **feat:** Versioned API paths — /2009-04-04/ through /2021-01-03/ (same as /latest/)
+- **feat:** Additional metadata endpoints: ami-id, instance-type, mac, region, services/, network/interfaces/macs/
+- **feat:** Custom access log middleware with source IP, method, path, status (health probes excluded)
+- **fix:** DHCP pool listing deserialization — MicroDNS returns bare JSON array, not `{ pools: [...] }` wrapper
+- **fix:** TraceLayer configured at INFO level (was defaulting to DEBUG)
 
 ### 2026-03-16
 - **feat:** Static identity config -- define users and SSH keys from .pub files (works without AMO NATS)
