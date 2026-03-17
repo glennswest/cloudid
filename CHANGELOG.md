@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-17
+- **fix:** gwest UID changed from 1000 to 1001 (1000 is reserved for `core` user on FCOS)
 - **fix:** user-data endpoint returns Ignition JSON instead of cloud-config (FCOS rejects `#cloud-config` prefix as invalid JSON)
 - **feat:** EC2 IMDSv2 support — PUT /latest/api/token with per-host token generation and storage
 - **feat:** Instance identity document — GET /latest/dynamic/instance-identity/document (JSON)
