@@ -307,10 +307,26 @@ pub async fn public_key(
 pub async fn user_data(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> AppResponse {
+) -> Result<(StatusCode, [(axum::http::header::HeaderName, &'static str); 1], String), StatusCode> {
     let ip = get_source_ip(&addr);
-    let meta = lookup_or_404(&state, &ip)?;
-    Ok(meta.user_data)
+
+    let meta = match state.resolve_on_demand(&ip).await {
+        Some(m) => m,
+        None => {
+            warn!(%ip, "user-data request from unknown IP");
+            return Err(StatusCode::NOT_FOUND);
+        }
+    };
+
+    let bmh = state.get_bmh(&meta.local_hostname).await;
+    let config = provision::build_ignition(&meta, bmh.as_ref());
+
+    info!(%ip, host = %meta.local_hostname, "serving user-data (ignition)");
+    Ok((
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        config,
+    ))
 }
 
 /// Serve Ignition v3 config for the requesting host.

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-17
+- **fix:** user-data endpoint returns Ignition JSON instead of cloud-config (FCOS rejects `#cloud-config` prefix as invalid JSON)
 - **feat:** EC2 IMDSv2 support — PUT /latest/api/token with per-host token generation and storage
 - **feat:** Instance identity document — GET /latest/dynamic/instance-identity/document (JSON)
 - **feat:** Versioned API paths — /2009-04-04/ through /2021-01-03/ (same as /latest/)
