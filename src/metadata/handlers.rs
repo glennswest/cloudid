@@ -456,7 +456,10 @@ pub async fn templates_list(
         .template_store
         .list_all()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            warn!(error = %e, "failed to list templates");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(Json(TemplateListResponse { templates }))
 }
 
@@ -469,7 +472,10 @@ pub async fn templates_list_by_type(
         .template_store
         .list_by_type(&image_type)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            warn!(error = %e, image_type, "failed to list templates by type");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(Json(TemplateListResponse { templates }))
 }
 
@@ -481,7 +487,10 @@ pub async fn templates_get(
     match state.template_store.get(&image_type, &name).await {
         Ok(Some(tpl)) => Ok(Json(tpl)),
         Ok(None) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            warn!(error = %e, image_type, name, "failed to get template");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
@@ -495,7 +504,10 @@ pub async fn templates_put(
         .template_store
         .put(&image_type, &name, &req)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            warn!(error = %e, image_type, name, "failed to put template");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok((StatusCode::OK, Json(tpl)))
 }
 
@@ -507,7 +519,10 @@ pub async fn templates_delete(
     match state.template_store.delete(&image_type, &name).await {
         Ok(true) => StatusCode::NO_CONTENT,
         Ok(false) => StatusCode::NOT_FOUND,
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Err(e) => {
+            warn!(error = %e, image_type, name, "failed to delete template");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     }
 }
 
@@ -521,7 +536,10 @@ pub async fn templates_backup(
         .template_store
         .backup()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            warn!(error = %e, "failed to backup templates");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(Json(bundle))
 }
 
@@ -534,7 +552,10 @@ pub async fn templates_restore(
         .template_store
         .restore(&bundle)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            warn!(error = %e, "failed to restore templates");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(Json(serde_json::json!({ "restored": count })))
 }
 

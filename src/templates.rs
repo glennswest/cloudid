@@ -172,9 +172,24 @@ impl TemplateStore {
             .join(format!("{}.meta.json", name))
     }
 
-    /// Ensure base directories exist.
+    /// Ensure base directories exist on PVC. Called at startup.
     pub async fn init(&self) -> anyhow::Result<()> {
-        fs::create_dir_all(self.templates_dir()).await?;
+        let data_dir = &self.data_dir;
+        let templates_dir = self.templates_dir();
+
+        // Create the data directory if it doesn't exist (PVC should provide it)
+        if !data_dir.exists() {
+            info!(path = %data_dir.display(), "creating data directory");
+            fs::create_dir_all(data_dir).await?;
+        }
+
+        // Create the templates subdirectory
+        if !templates_dir.exists() {
+            info!(path = %templates_dir.display(), "creating templates directory");
+            fs::create_dir_all(&templates_dir).await?;
+        }
+
+        info!(path = %data_dir.display(), "template store initialized");
         Ok(())
     }
 
