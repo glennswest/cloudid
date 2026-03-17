@@ -5,6 +5,7 @@ use crate::model::{
     SubjectKind, UserResource, UserSpec,
 };
 use crate::resolve;
+use crate::templates::{AssignmentsFile, OneshotState, TemplateStore};
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -66,6 +67,12 @@ pub struct AppState {
     pub bmh: RwLock<BmhState>,
     /// Discovered data network namespaces (from mkube /api/v1/networks)
     pub data_namespaces: RwLock<Vec<String>>,
+    /// Template store (file-based on PVC)
+    pub template_store: TemplateStore,
+    /// Host-to-template assignments
+    pub assignments: RwLock<AssignmentsFile>,
+    /// Oneshot completion state
+    pub oneshot: RwLock<OneshotState>,
     /// Application config
     pub config: Config,
     /// Counter for generating unique tokens
@@ -73,10 +80,20 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config: Config) -> Arc<Self> {
+    pub async fn new(config: Config) -> Arc<Self> {
         let identity = load_static_identity(&config);
         let count = identity.users.len();
         let rules = identity.host_access.len();
+
+        let template_store = TemplateStore::new(&config.templates.data_dir);
+        if let Err(e) = template_store.init().await {
+            warn!(error = %e, "failed to initialize template store directories");
+        }
+
+        let assignments = template_store.load_assignments().await;
+        let oneshot = template_store.load_oneshot().await;
+        let asgn_count = assignments.assignments.len();
+        let os_count = oneshot.completed.len();
 
         let state = Arc::new(Self {
             metadata_cache: DashMap::new(),
@@ -84,12 +101,18 @@ impl AppState {
             identity: RwLock::new(identity),
             bmh: RwLock::new(BmhState::default()),
             data_namespaces: RwLock::new(Vec::new()),
+            template_store,
+            assignments: RwLock::new(assignments),
+            oneshot: RwLock::new(oneshot),
             config,
             token_counter: std::sync::atomic::AtomicU64::new(1),
         });
 
         if count > 0 {
             info!(users = count, rules, "loaded static identity from config");
+        }
+        if asgn_count > 0 || os_count > 0 {
+            info!(assignments = asgn_count, oneshot_completed = os_count, "loaded template state from PVC");
         }
 
         state

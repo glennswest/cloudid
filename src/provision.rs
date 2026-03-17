@@ -1,7 +1,10 @@
+use crate::cache::AppState;
 use crate::model::{BareMetalHost, HostMetadata};
+use crate::templates::{self, TemplateFormat};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
+use tracing::{debug, info};
 
 // --- Ignition v3.4.0 types for serialization ---
 
@@ -434,6 +437,169 @@ fn url_encode(s: &str) -> String {
     encoded
 }
 
+// --- Template-based provisioning ---
+
+/// Result of template resolution: either a rendered config or None (boot from local).
+pub enum TemplateResult {
+    /// Rendered config content with its format.
+    Config { content: String, format: TemplateFormat },
+    /// No template — use default behavior (identity-only generation).
+    None,
+}
+
+/// Resolve and build a config for a host using the template system.
+///
+/// Resolution priority:
+/// 1. If host completed a oneshot → return None (boot from local)
+/// 2. BMH `spec.template` field
+/// 3. REST API assignment (assignments.json)
+/// 4. Config-based `[[templates.assignments]]` (legacy fallback)
+/// 5. No match → None (default behavior)
+pub async fn resolve_and_build(
+    state: &AppState,
+    hostname: &str,
+    meta: &HostMetadata,
+    bmh: Option<&BareMetalHost>,
+) -> TemplateResult {
+    // Step 1: Check oneshot completion
+    {
+        let oneshot = state.oneshot.read().await;
+        if oneshot.completed.contains_key(hostname) {
+            debug!(hostname, "oneshot completed, skipping template");
+            return TemplateResult::None;
+        }
+    }
+
+    // Step 2-4: Resolve template reference
+    let template_ref = resolve_template_ref(state, hostname, bmh).await;
+    let (image_type, template_name) = match template_ref {
+        Some(r) => r,
+        None => return TemplateResult::None,
+    };
+
+    // Load the template
+    let loaded = match state.template_store.get(&image_type, &template_name).await {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            debug!(image_type, template_name, hostname, "template not found on disk");
+            return TemplateResult::None;
+        }
+        Err(e) => {
+            tracing::warn!(image_type, template_name, hostname, error = %e, "failed to load template");
+            return TemplateResult::None;
+        }
+    };
+
+    // Substitute variables
+    let content = templates::substitute_variables(
+        &loaded.content,
+        &meta.hostname,
+        &meta.local_ipv4,
+        &meta.instance_id,
+        &meta.availability_zone,
+        &state.config.metadata.domain_suffix,
+        &loaded.name,
+    );
+
+    // Merge SSH keys based on format
+    let final_content = match loaded.format {
+        TemplateFormat::Ignition => {
+            match serde_json::from_str::<Value>(&content) {
+                Ok(base_json) => merge_ignition(&base_json, meta),
+                Err(_) => {
+                    tracing::warn!(image_type, template_name = loaded.name, "template is not valid JSON, serving as-is");
+                    content
+                }
+            }
+        }
+        TemplateFormat::Kickstart => merge_kickstart(&content, meta),
+        TemplateFormat::CloudConfig => {
+            // For cloud-config, just return the substituted content
+            // (SSH keys are already in the EC2 metadata path)
+            content
+        }
+    };
+
+    info!(hostname, image_type, template = loaded.name, mode = ?loaded.mode, "serving template config");
+
+    TemplateResult::Config {
+        content: final_content,
+        format: loaded.format,
+    }
+}
+
+/// Resolve which template applies to a host.
+/// Returns (image_type, template_filename) or None.
+async fn resolve_template_ref(
+    state: &AppState,
+    hostname: &str,
+    bmh: Option<&BareMetalHost>,
+) -> Option<(String, String)> {
+    // Priority 2: BMH spec.template field
+    if let Some(bmh) = bmh {
+        if let Some(ref tpl) = bmh.spec.template {
+            if !tpl.is_empty() {
+                return Some(parse_template_ref(tpl, bmh));
+            }
+        }
+    }
+
+    // Priority 3: REST API assignment
+    {
+        let assignments = state.assignments.read().await;
+        if let Some(asgn) = assignments.assignments.get(hostname) {
+            return Some((asgn.image_type.clone(), asgn.template.clone()));
+        }
+    }
+
+    // Priority 4: Config-based assignments
+    for rule in &state.config.templates.assignments {
+        if rule.hosts.iter().any(|h| h == hostname || h == "*") {
+            return Some(parse_config_template_ref(&rule.template));
+        }
+    }
+
+    None
+}
+
+/// Parse a template reference like "fcos/agent-runner.ign.json" or "agent-runner.ign.json".
+/// If no slash, use the BMH image type to derive it.
+fn parse_template_ref(tpl_ref: &str, bmh: &BareMetalHost) -> (String, String) {
+    if let Some(pos) = tpl_ref.find('/') {
+        let image_type = &tpl_ref[..pos];
+        let name = &tpl_ref[pos + 1..];
+        (image_type.to_string(), name.to_string())
+    } else {
+        // Derive image type from BMH image field
+        let image_type = extract_image_type(&bmh.spec.image);
+        (image_type, tpl_ref.to_string())
+    }
+}
+
+/// Parse a config-based template reference (always "image_type/name" format).
+fn parse_config_template_ref(tpl_ref: &str) -> (String, String) {
+    if let Some(pos) = tpl_ref.find('/') {
+        let image_type = &tpl_ref[..pos];
+        let name = &tpl_ref[pos + 1..];
+        (image_type.to_string(), name.to_string())
+    } else {
+        ("default".to_string(), tpl_ref.to_string())
+    }
+}
+
+/// Extract the base image type from a BMH image string.
+/// e.g., "fcos-44" -> "fcos", "fedora-9" -> "fedora", "ubuntu-24.04" -> "ubuntu"
+pub fn extract_image_type(image: &str) -> String {
+    // Strip trailing version: everything after the last hyphen that starts with a digit
+    if let Some(pos) = image.rfind('-') {
+        let after = &image[pos + 1..];
+        if after.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            return image[..pos].to_string();
+        }
+    }
+    image.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,5 +707,25 @@ mod tests {
         let ssh_pos = output.find("sshkey").unwrap();
         let pkg_pos = output.find("%packages").unwrap();
         assert!(ssh_pos < pkg_pos);
+    }
+
+    #[test]
+    fn test_extract_image_type() {
+        assert_eq!(extract_image_type("fcos-44"), "fcos");
+        assert_eq!(extract_image_type("fedora-9"), "fedora");
+        assert_eq!(extract_image_type("ubuntu-24.04"), "ubuntu");
+        assert_eq!(extract_image_type("fcos"), "fcos");
+        assert_eq!(extract_image_type("my-custom-image-3"), "my-custom-image");
+    }
+
+    #[test]
+    fn test_parse_config_template_ref() {
+        let (it, name) = parse_config_template_ref("fcos/agent-runner.ign.json");
+        assert_eq!(it, "fcos");
+        assert_eq!(name, "agent-runner.ign.json");
+
+        let (it, name) = parse_config_template_ref("just-a-name");
+        assert_eq!(it, "default");
+        assert_eq!(name, "just-a-name");
     }
 }

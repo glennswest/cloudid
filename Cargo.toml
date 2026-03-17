@@ -1,6 +1,6 @@
 [package]
 name = "cloudid"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Afterburn-compatible metadata service for provisioning SSH keys and user accounts to bare metal hosts"
 license = "MIT"

@@ -16,12 +16,17 @@ spec:
     - name: config
       configMap:
         name: cloudid-config
+    - name: data
+      persistentVolumeClaim:
+        claimName: cloudid-data
   containers:
     - name: cloudid
       image: registry.gt.lo:5000/cloudid:edge
       volumeMounts:
         - name: config
           mountPath: /etc/cloudid
+        - name: data
+          mountPath: /var/lib/cloudid
       livenessProbe:
         httpGet:
           path: /health

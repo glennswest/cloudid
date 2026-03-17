@@ -148,8 +148,10 @@ src/main.rs          -- Server entry point
 src/config.rs        -- TOML config
 src/metadata/        -- EC2-compatible metadata endpoint handlers
 src/watcher/         -- AMO (NATS) and mkube (HTTP) watchers
-src/cache/           -- In-memory metadata cache (IP -> keys precomputation)
-src/resolve/         -- IP -> hostname -> HostAccess -> users -> SSH keys pipeline
+src/cache.rs         -- In-memory metadata cache (IP -> keys precomputation)
+src/resolve.rs       -- IP -> hostname -> HostAccess -> users -> SSH keys pipeline
+src/provision.rs     -- Ignition/kickstart generation, template resolution + variable substitution
+src/templates.rs     -- Template CRUD, file I/O, backup/restore, assignments, oneshot state
 src/agent/           -- cloudid-agent binary (periodic key refresh)
 tests/               -- Integration + unit tests
 ```
@@ -174,7 +176,7 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 
 ## Work Plan
 
-### Current Version: `v0.1.0`
+### Current Version: `v0.2.0`
 
 ### Phase 1: Scaffolding
 - [x] Initialize Cargo project
@@ -246,6 +248,7 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 - [x] Static identity config (SSH keys in config.toml, works without AMO)
 - [x] Ignition/kickstart provisioning (BMH CRD base config + SSH key merge)
 - [x] Wildcard host matching for static access rules
+- [x] Template system — REST API CRUD, PVC storage, backup/restore, assignments, oneshot, diagnostics
 
 ---
 

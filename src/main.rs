@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
                 "starting cloudid"
             );
 
-            let state = AppState::new(config.clone());
+            let state = AppState::new(config.clone()).await;
 
             // Spawn AMO NATS watcher
             let amo_state = Arc::clone(&state);

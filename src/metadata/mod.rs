@@ -3,7 +3,7 @@ mod handlers;
 use crate::cache::AppState;
 use axum::extract::ConnectInfo;
 use axum::middleware;
-use axum::routing::{get, put};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -143,6 +143,40 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Provisioning endpoints
         .route("/config/ignition", get(handlers::ignition_config))
         .route("/config/kickstart", get(handlers::kickstart_config))
+        .route("/config/provisioned", post(handlers::oneshot_provisioned))
+        .route("/config/template", get(handlers::template_info))
+        // Template CRUD
+        .route("/api/v1/templates", get(handlers::templates_list))
+        .route(
+            "/api/v1/templates/backup",
+            get(handlers::templates_backup),
+        )
+        .route(
+            "/api/v1/templates/restore",
+            post(handlers::templates_restore),
+        )
+        .route(
+            "/api/v1/templates/{image_type}",
+            get(handlers::templates_list_by_type),
+        )
+        .route(
+            "/api/v1/templates/{image_type}/{name}",
+            get(handlers::templates_get)
+                .put(handlers::templates_put)
+                .delete(handlers::templates_delete),
+        )
+        // Template assignments
+        .route("/api/v1/assignments", get(handlers::assignments_list))
+        .route(
+            "/api/v1/assignments/{hostname}",
+            put(handlers::assignments_put).delete(handlers::assignments_delete),
+        )
+        // Oneshot management
+        .route("/api/v1/oneshot", get(handlers::oneshot_list))
+        .route(
+            "/api/v1/oneshot/{hostname}",
+            delete(handlers::oneshot_delete),
+        )
         .route("/health", get(handlers::health))
         .layer(middleware::from_fn(access_log))
         .with_state(state)

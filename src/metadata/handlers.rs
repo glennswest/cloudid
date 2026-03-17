@@ -1,8 +1,13 @@
 use crate::cache::AppState;
 use crate::provision;
+use crate::templates::{
+    self, Assignment, AssignmentRequest, TemplateBundle, TemplateCreateRequest,
+    TemplateListResponse,
+};
 use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
+use axum::Json;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -319,14 +324,28 @@ pub async fn user_data(
     };
 
     let bmh = state.get_bmh(&meta.local_hostname).await;
-    let config = provision::build_ignition(&meta, bmh.as_ref());
 
-    info!(%ip, host = %meta.local_hostname, "serving user-data (ignition)");
-    Ok((
-        StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "application/json")],
-        config,
-    ))
+    // Try template system first
+    match provision::resolve_and_build(&state, &meta.local_hostname, &meta, bmh.as_ref()).await {
+        provision::TemplateResult::Config { content, format } => {
+            info!(%ip, host = %meta.local_hostname, "serving user-data (template)");
+            Ok((
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, format.as_content_type())],
+                content,
+            ))
+        }
+        provision::TemplateResult::None => {
+            // Fall back to default ignition generation
+            let config = provision::build_ignition(&meta, bmh.as_ref());
+            info!(%ip, host = %meta.local_hostname, "serving user-data (ignition)");
+            Ok((
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                config,
+            ))
+        }
+    }
 }
 
 /// Serve Ignition v3 config for the requesting host.
@@ -345,14 +364,27 @@ pub async fn ignition_config(
     };
 
     let bmh = state.get_bmh(&meta.local_hostname).await;
-    let config = provision::build_ignition(&meta, bmh.as_ref());
 
-    info!(%ip, host = %meta.local_hostname, "serving ignition config");
-    Ok((
-        StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "application/json")],
-        config,
-    ))
+    // Try template system first
+    match provision::resolve_and_build(&state, &meta.local_hostname, &meta, bmh.as_ref()).await {
+        provision::TemplateResult::Config { content, format } => {
+            info!(%ip, host = %meta.local_hostname, "serving ignition config (template)");
+            Ok((
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, format.as_content_type())],
+                content,
+            ))
+        }
+        provision::TemplateResult::None => {
+            let config = provision::build_ignition(&meta, bmh.as_ref());
+            info!(%ip, host = %meta.local_hostname, "serving ignition config");
+            Ok((
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                config,
+            ))
+        }
+    }
 }
 
 /// Serve kickstart config for the requesting host.
@@ -371,14 +403,27 @@ pub async fn kickstart_config(
     };
 
     let bmh = state.get_bmh(&meta.local_hostname).await;
-    let config = provision::build_kickstart(&meta, bmh.as_ref());
 
-    info!(%ip, host = %meta.local_hostname, "serving kickstart config");
-    Ok((
-        StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "text/plain")],
-        config,
-    ))
+    // Try template system first
+    match provision::resolve_and_build(&state, &meta.local_hostname, &meta, bmh.as_ref()).await {
+        provision::TemplateResult::Config { content, format } => {
+            info!(%ip, host = %meta.local_hostname, "serving kickstart config (template)");
+            Ok((
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, format.as_content_type())],
+                content,
+            ))
+        }
+        provision::TemplateResult::None => {
+            let config = provision::build_kickstart(&meta, bmh.as_ref());
+            info!(%ip, host = %meta.local_hostname, "serving kickstart config");
+            Ok((
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "text/plain")],
+                config,
+            ))
+        }
+    }
 }
 
 pub async fn health() -> impl IntoResponse {
@@ -399,4 +444,294 @@ fn lookup_or_404(
             Err(StatusCode::NOT_FOUND)
         }
     }
+}
+
+// --- Template CRUD handlers ---
+
+/// GET /api/v1/templates — list all templates.
+pub async fn templates_list(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<TemplateListResponse>, StatusCode> {
+    let templates = state
+        .template_store
+        .list_all()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(TemplateListResponse { templates }))
+}
+
+/// GET /api/v1/templates/:image_type — list templates for an image type.
+pub async fn templates_list_by_type(
+    State(state): State<Arc<AppState>>,
+    Path(image_type): Path<String>,
+) -> Result<Json<TemplateListResponse>, StatusCode> {
+    let templates = state
+        .template_store
+        .list_by_type(&image_type)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(TemplateListResponse { templates }))
+}
+
+/// GET /api/v1/templates/:image_type/:name — get a single template.
+pub async fn templates_get(
+    State(state): State<Arc<AppState>>,
+    Path((image_type, name)): Path<(String, String)>,
+) -> Result<Json<templates::LoadedTemplate>, StatusCode> {
+    match state.template_store.get(&image_type, &name).await {
+        Ok(Some(tpl)) => Ok(Json(tpl)),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+/// PUT /api/v1/templates/:image_type/:name — create or update a template.
+pub async fn templates_put(
+    State(state): State<Arc<AppState>>,
+    Path((image_type, name)): Path<(String, String)>,
+    Json(req): Json<TemplateCreateRequest>,
+) -> Result<(StatusCode, Json<templates::LoadedTemplate>), StatusCode> {
+    let tpl = state
+        .template_store
+        .put(&image_type, &name, &req)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok((StatusCode::OK, Json(tpl)))
+}
+
+/// DELETE /api/v1/templates/:image_type/:name — delete a template.
+pub async fn templates_delete(
+    State(state): State<Arc<AppState>>,
+    Path((image_type, name)): Path<(String, String)>,
+) -> StatusCode {
+    match state.template_store.delete(&image_type, &name).await {
+        Ok(true) => StatusCode::NO_CONTENT,
+        Ok(false) => StatusCode::NOT_FOUND,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+// --- Backup/Restore handlers ---
+
+/// GET /api/v1/templates/backup — export all templates as a JSON bundle.
+pub async fn templates_backup(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<TemplateBundle>, StatusCode> {
+    let bundle = state
+        .template_store
+        .backup()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(bundle))
+}
+
+/// POST /api/v1/templates/restore — import templates from a JSON bundle.
+pub async fn templates_restore(
+    State(state): State<Arc<AppState>>,
+    Json(bundle): Json<TemplateBundle>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let count = state
+        .template_store
+        .restore(&bundle)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({ "restored": count })))
+}
+
+// --- Assignment handlers ---
+
+/// GET /api/v1/assignments — list all host-to-template assignments.
+pub async fn assignments_list(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let assignments = state.assignments.read().await;
+    Json(serde_json::to_value(&*assignments).unwrap_or_default())
+}
+
+/// PUT /api/v1/assignments/:hostname — assign a template to a host.
+pub async fn assignments_put(
+    State(state): State<Arc<AppState>>,
+    Path(hostname): Path<String>,
+    Json(req): Json<AssignmentRequest>,
+) -> StatusCode {
+    let mut assignments = state.assignments.write().await;
+    assignments.assignments.insert(
+        hostname.clone(),
+        Assignment {
+            image_type: req.image_type,
+            template: req.template,
+        },
+    );
+    if let Err(e) = state.template_store.save_assignments(&assignments).await {
+        warn!(error = %e, "failed to persist assignments");
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+    info!(hostname, "template assignment updated");
+    StatusCode::OK
+}
+
+/// DELETE /api/v1/assignments/:hostname — remove a template assignment.
+pub async fn assignments_delete(
+    State(state): State<Arc<AppState>>,
+    Path(hostname): Path<String>,
+) -> StatusCode {
+    let mut assignments = state.assignments.write().await;
+    if assignments.assignments.remove(&hostname).is_none() {
+        return StatusCode::NOT_FOUND;
+    }
+    if let Err(e) = state.template_store.save_assignments(&assignments).await {
+        warn!(error = %e, "failed to persist assignments");
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+    info!(hostname, "template assignment removed");
+    StatusCode::NO_CONTENT
+}
+
+// --- Oneshot handlers ---
+
+/// POST /config/provisioned — host marks its oneshot template as complete (by source IP).
+pub async fn oneshot_provisioned(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> StatusCode {
+    let ip = get_source_ip(&addr);
+
+    let hostname = {
+        let bmh = state.bmh.read().await;
+        match bmh.ip_to_hostname.get(&ip) {
+            Some(h) => h.clone(),
+            None => {
+                warn!(%ip, "provisioned request from unknown IP");
+                return StatusCode::NOT_FOUND;
+            }
+        }
+    };
+
+    let mut oneshot = state.oneshot.write().await;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .to_string();
+    oneshot.completed.insert(hostname.clone(), ts);
+
+    if let Err(e) = state.template_store.save_oneshot(&oneshot).await {
+        warn!(error = %e, "failed to persist oneshot state");
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+
+    info!(%ip, hostname, "oneshot provisioning marked complete");
+    StatusCode::OK
+}
+
+/// GET /api/v1/oneshot — list all oneshot completion states.
+pub async fn oneshot_list(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let oneshot = state.oneshot.read().await;
+    Json(serde_json::to_value(&*oneshot).unwrap_or_default())
+}
+
+/// DELETE /api/v1/oneshot/:hostname — reset oneshot for re-provisioning.
+pub async fn oneshot_delete(
+    State(state): State<Arc<AppState>>,
+    Path(hostname): Path<String>,
+) -> StatusCode {
+    let mut oneshot = state.oneshot.write().await;
+    if oneshot.completed.remove(&hostname).is_none() {
+        return StatusCode::NOT_FOUND;
+    }
+    if let Err(e) = state.template_store.save_oneshot(&oneshot).await {
+        warn!(error = %e, "failed to persist oneshot state");
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+    info!(hostname, "oneshot state reset for re-provisioning");
+    StatusCode::NO_CONTENT
+}
+
+// --- Diagnostics ---
+
+/// GET /config/template — returns template info for the requesting host (by source IP).
+pub async fn template_info(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let ip = get_source_ip(&addr);
+
+    let hostname = {
+        let bmh = state.bmh.read().await;
+        bmh.ip_to_hostname.get(&ip).cloned()
+    };
+
+    let hostname = match hostname {
+        Some(h) => h,
+        None => {
+            return Ok(Json(serde_json::json!({
+                "ip": ip.to_string(),
+                "hostname": null,
+                "template": null,
+                "reason": "unknown IP"
+            })));
+        }
+    };
+
+    // Check oneshot
+    let oneshot_done = {
+        let oneshot = state.oneshot.read().await;
+        oneshot.completed.contains_key(&hostname)
+    };
+
+    if oneshot_done {
+        return Ok(Json(serde_json::json!({
+            "ip": ip.to_string(),
+            "hostname": hostname,
+            "template": null,
+            "reason": "oneshot completed"
+        })));
+    }
+
+    // Check assignments
+    let bmh = state.get_bmh(&hostname).await;
+    let bmh_assignment = bmh.as_ref().and_then(|b| {
+        b.spec
+            .template
+            .as_ref()
+            .filter(|t| !t.is_empty())
+            .map(|tpl| ("bmh".to_string(), tpl.clone()))
+    });
+
+    // Try REST assignment (sync read via try_read)
+    let rest_assignment = {
+        let assignments = state.assignments.try_read();
+        match assignments {
+            Ok(a) => a.assignments.get(&hostname).map(|asgn| {
+                (
+                    "rest_assignment".to_string(),
+                    format!("{}/{}", asgn.image_type, asgn.template),
+                )
+            }),
+            Err(_) => None,
+        }
+    };
+
+    let config_assignment = state
+        .config
+        .templates
+        .assignments
+        .iter()
+        .find(|r| r.hosts.iter().any(|h| h == &hostname || h == "*"))
+        .map(|r| ("config".to_string(), r.template.clone()));
+
+    let (source, template_ref) = bmh_assignment
+        .or(rest_assignment)
+        .or(config_assignment)
+        .unzip();
+
+    Ok(Json(serde_json::json!({
+        "ip": ip.to_string(),
+        "hostname": hostname,
+        "template": template_ref,
+        "source": source,
+        "oneshot_completed": false
+    })))
 }

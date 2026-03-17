@@ -5,4 +5,5 @@ pub mod metadata_route;
 pub mod model;
 pub mod provision;
 pub mod resolve;
+pub mod templates;
 pub mod watcher;

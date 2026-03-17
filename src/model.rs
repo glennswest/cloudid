@@ -174,6 +174,9 @@ pub struct BmhSpec {
     pub hostname: String,
     #[serde(default)]
     pub bmc: Option<BmhBmc>,
+    /// Template assignment from BMH CRD (format: "image_type/name" or just "name").
+    #[serde(default)]
+    pub template: Option<String>,
     /// Base Ignition v3 config JSON (from BMH CRD). CloudID merges SSH keys into this.
     #[serde(default)]
     pub ignition: Option<serde_json::Value>,

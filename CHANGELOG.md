@@ -3,6 +3,22 @@
 ## [Unreleased]
 
 ### 2026-03-17
+- **feat:** Template system — REST API for managing provisioning templates (CRUD, backup/restore)
+- **feat:** Template assignments — assign templates to hosts via REST API or config
+- **feat:** Oneshot templates — first-boot-only templates with completion tracking
+- **feat:** Template variable substitution — `{{HOSTNAME}}`, `{{IP}}`, `{{INSTANCE_ID}}`, etc.
+- **feat:** Template resolution priority — oneshot check → BMH spec → REST assignment → config fallback
+- **feat:** Template format auto-detection from file extension (`.ign.json`, `.ks`, `.yaml`)
+- **feat:** SSH key merging into templates — existing `merge_ignition`/`merge_kickstart` applied automatically
+- **feat:** Template backup/restore — export all templates as JSON bundle, import to restore
+- **feat:** Template diagnostics endpoint — `GET /config/template` shows resolved template for requesting host
+- **feat:** PVC-backed template storage — templates survive restarts at `/var/lib/cloudid/templates/`
+- **feat:** Image type organization — templates grouped by image type (`fcos/`, `fedora/`, `ubuntu/`)
+- **feat:** Config-based template assignments — `[[templates.assignments]]` for bootstrap fallback
+- **test:** Added 7 new tests (template CRUD, backup/restore, assignments, oneshot, variable substitution, format detection, image type extraction)
+- **build:** PVC volume mount added to deploy manifest for `/var/lib/cloudid`
+
+### 2026-03-17 (earlier)
 - **fix:** gwest UID changed from 1000 to 1001 (1000 is reserved for `core` user on FCOS)
 - **fix:** user-data endpoint returns Ignition JSON instead of cloud-config (FCOS rejects `#cloud-config` prefix as invalid JSON)
 - **feat:** EC2 IMDSv2 support — PUT /latest/api/token with per-host token generation and storage

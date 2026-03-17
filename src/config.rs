@@ -11,6 +11,8 @@ pub struct Config {
     pub static_users: Vec<StaticUserConfig>,
     #[serde(default)]
     pub static_host_access: Vec<StaticHostAccessConfig>,
+    #[serde(default)]
+    pub templates: TemplatesConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -79,6 +81,37 @@ pub struct StaticHostAccessConfig {
     pub users: Vec<String>,
     #[serde(default)]
     pub sudo: bool,
+}
+
+/// Template system configuration.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TemplatesConfig {
+    /// PVC mount point for templates + state files.
+    #[serde(default = "default_data_dir")]
+    pub data_dir: String,
+    /// Bootstrap template assignments (config-based fallback).
+    #[serde(default)]
+    pub assignments: Vec<TemplateAssignmentConfig>,
+}
+
+impl Default for TemplatesConfig {
+    fn default() -> Self {
+        Self {
+            data_dir: default_data_dir(),
+            assignments: Vec::new(),
+        }
+    }
+}
+
+fn default_data_dir() -> String {
+    "/var/lib/cloudid".to_string()
+}
+
+/// A config-based template assignment (lowest priority fallback).
+#[derive(Debug, Clone, Deserialize)]
+pub struct TemplateAssignmentConfig {
+    pub hosts: Vec<String>,
+    pub template: String,
 }
 
 impl Config {
