@@ -17,6 +17,7 @@
 - **feat:** Config-based template assignments — `[[templates.assignments]]` for bootstrap fallback
 - **test:** Added 7 new tests (template CRUD, backup/restore, assignments, oneshot, variable substitution, format detection, image type extraction)
 - **build:** PVC volume mount added to deploy manifest for `/var/lib/cloudid`
+- **docs:** Comprehensive template system documentation in README.md
 
 ### 2026-03-17 (earlier)
 - **fix:** gwest UID changed from 1000 to 1001 (1000 is reserved for `core` user on FCOS)

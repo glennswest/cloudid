@@ -1,6 +1,6 @@
 # CloudIdOperator
 
-Afterburn-compatible metadata service for provisioning SSH keys, user accounts, Ignition configs, and kickstart configs to bare metal hosts.
+Afterburn-compatible metadata service for provisioning SSH keys, user accounts, Ignition configs, kickstart configs, and configurable templates to bare metal hosts.
 
 ## Overview
 
@@ -13,6 +13,7 @@ CloudIdOperator serves SSH keys, hostnames, user account data, and provisioning 
 - **cloud-config Generation** -- serves `/latest/user-data` with Unix user accounts, groups, sudo, and SSH keys
 - **Ignition Config** -- serves `/config/ignition` with Ignition v3.4.0 JSON, merging SSH keys from identity into BMH-provided base configs
 - **Kickstart Config** -- serves `/config/kickstart` with kickstart text, merging SSH keys from identity into BMH-provided base configs
+- **Template System** -- configurable templates define what a host becomes at boot (agent runner, NFS server, etc.) without changing Rust code. REST API for CRUD, assignments, oneshot mode, backup/restore
 - **Static Identity** -- SSH keys from `.pub` files in config, works without AMO NATS for bootstrap
 - **BMH Integration** -- watches mkube for BareMetalHost objects to maintain IP-to-hostname mappings
 - **AMO Watcher** -- watches AMO via NATS for real-time user/group/access updates
@@ -29,25 +30,29 @@ CloudIdOperator serves SSH keys, hostnames, user account data, and provisioning 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────┐
-│           CloudIdOperator                │
-│                                          │
-│  ┌──────────────┐  ┌─────────────────┐  │
-│  │ EC2 Metadata │  │    Watchers     │  │
-│  │   :8090      │  │                 │  │
-│  ├──────────────┤  │ AMO (NATS)      │  │
-│  │ /config/     │  │ mkube (HTTP)    │  │
-│  │  ignition    │  │ Networks (HTTP) │  │
-│  │  kickstart   │  └────────┬────────┘  │
-│  └──────┬───────┘           │           │
-│  ┌──────▼───────┐           │           │
-│  │  Metadata    │◄──────────┘           │
-│  │   Cache      │                       │
-│  │ (IP->keys)   │  ┌─────────────────┐  │
-│  └──────────────┘  │ DHCP Route Mgr  │  │
-│                    │ (MicroDNS API)  │  │
-│                    └─────────────────┘  │
-└──────────────────────────────────────────┘
+┌────────────────────────────────────────────────┐
+│              CloudIdOperator                    │
+│                                                │
+│  ┌──────────────┐  ┌─────────────────┐         │
+│  │ EC2 Metadata │  │    Watchers     │         │
+│  │   :8090      │  │                 │         │
+│  ├──────────────┤  │ AMO (NATS)      │         │
+│  │ /config/     │  │ mkube (HTTP)    │         │
+│  │  ignition    │  │ Networks (HTTP) │         │
+│  │  kickstart   │  └────────┬────────┘         │
+│  ├──────────────┤           │                  │
+│  │ /api/v1/     │           │                  │
+│  │  templates   │  ┌────────▼────────┐         │
+│  │  assignments │  │  Metadata Cache │         │
+│  │  oneshot     │  │  (IP->keys)     │         │
+│  └──────┬───────┘  └────────────────┘          │
+│         │                                      │
+│  ┌──────▼───────┐  ┌─────────────────┐         │
+│  │  Template    │  │ DHCP Route Mgr  │         │
+│  │   Store      │  │ (MicroDNS API)  │         │
+│  │ (PVC disk)   │  └─────────────────┘         │
+│  └──────────────┘                              │
+└────────────────────────────────────────────────┘
          ▲
          │ 169.254.169.254:80 (DNAT via MikroTik)
          │
@@ -67,7 +72,8 @@ CloudIdOperator serves SSH keys, hostnames, user account data, and provisioning 
 3. For CoreOS: Afterburn queries `http://169.254.169.254/latest/meta-data/public-keys/`
 4. For Ignition: fetches config from `http://169.254.169.254/config/ignition`
 5. For kickstart: anaconda fetches from `http://169.254.169.254/config/kickstart`
-6. CloudIdOperator identifies host by source IP, resolves access rules, returns metadata
+6. CloudIdOperator identifies host by source IP, checks for a matching template, resolves access rules, merges SSH keys, and returns the config
+7. If the template is **oneshot**, the host calls `POST /config/provisioned` after first boot and subsequent boots return no template (boot from local disk)
 
 ### Metadata Discovery (169.254.169.254)
 
@@ -136,7 +142,35 @@ GET /config/ignition   -> Ignition v3.4.0 JSON (Content-Type: application/json)
 GET /config/kickstart  -> Kickstart text (Content-Type: text/plain)
 ```
 
-Both endpoints resolve the host by source IP and merge SSH keys from the identity pipeline into the base config from the BMH CRD. If no base config exists on the BMH, a default is generated.
+Both endpoints resolve the host by source IP. If a template is assigned to the host, the template content is served with variable substitution and SSH key merging applied. If no template matches, the default behavior generates a config from the identity pipeline (or uses a BMH base config if present).
+
+### Template REST API
+
+```
+# Template CRUD
+GET    /api/v1/templates                           -> list all templates
+GET    /api/v1/templates/{image_type}              -> list templates for an image type
+GET    /api/v1/templates/{image_type}/{name}       -> get template (content + metadata)
+PUT    /api/v1/templates/{image_type}/{name}       -> create or update template
+DELETE /api/v1/templates/{image_type}/{name}       -> delete template
+
+# Backup & Restore
+GET    /api/v1/templates/backup                    -> export all templates as JSON bundle
+POST   /api/v1/templates/restore                   -> import templates from JSON bundle
+
+# Host-to-Template Assignments
+GET    /api/v1/assignments                         -> list all assignments
+PUT    /api/v1/assignments/{hostname}              -> assign a template to a host
+DELETE /api/v1/assignments/{hostname}              -> remove assignment
+
+# Oneshot Management
+POST   /config/provisioned                         -> host marks oneshot complete (by source IP)
+GET    /api/v1/oneshot                             -> list all oneshot completion states
+DELETE /api/v1/oneshot/{hostname}                  -> reset oneshot for re-provisioning
+
+# Diagnostics
+GET    /config/template                            -> template info for requesting host (by source IP)
+```
 
 ### BMH CRD Provisioning Config
 
@@ -166,6 +200,230 @@ spec:
 ```
 
 CloudID reads `spec.ignition` (JSON) or `spec.kickstart` (text) from the BMH, merges SSH keys and user accounts from the identity pipeline, and serves the result. The BMH carries platform config (storage, network, packages); CloudID injects identity (users, SSH keys, sudo).
+
+## Template System
+
+Templates make the same base ISO universal -- a host becomes an agent runner, NFS server, or GPU worker based on its template assignment, without changing Rust code. Templates are managed via REST API and stored on a PVC.
+
+### Concepts
+
+- **Template** -- a provisioning config file (Ignition JSON, kickstart, or cloud-config YAML) with variable placeholders, stored on disk at `/var/lib/cloudid/templates/{image_type}/{name}`
+- **Image type** -- a directory grouping templates by OS family (`fcos/`, `fedora/`, `ubuntu/`). Templates under `fcos/` work for any FCOS version.
+- **Assignment** -- maps a hostname to a specific template. Can come from the BMH CRD, REST API, or config file.
+- **Oneshot mode** -- template is served on first boot only. After the host calls `POST /config/provisioned`, subsequent boots return no template (host boots from local disk).
+- **Forever mode** -- template is served on every boot.
+
+### Storage Layout (PVC)
+
+```
+/var/lib/cloudid/
+  templates/
+    fcos/
+      agent-runner.ign.json           # Ignition template
+      agent-runner.ign.json.meta.json # Metadata (mode, timestamps)
+      nfs-server.ign.json
+      gpu-worker.ign.json
+    fedora/
+      base-server.ks                  # Kickstart template
+      nfs-server.ks
+    ubuntu/
+      base-server.yaml                # Cloud-config template
+  assignments.json                    # Host-to-template assignments
+  oneshot.json                        # Oneshot completion state
+```
+
+### Template Format
+
+Templates use `{{VARIABLE}}` placeholders -- simple string replacement, no template engine:
+
+| Variable | Value | Example |
+|----------|-------|---------|
+| `{{HOSTNAME}}` | FQDN | `server1.g10.lo` |
+| `{{SHORT_HOSTNAME}}` | Short name | `server1` |
+| `{{IP}}` | Host IP address | `192.168.10.10` |
+| `{{INSTANCE_ID}}` | Instance identifier | `server1` |
+| `{{AVAILABILITY_ZONE}}` | AZ string | `gt` |
+| `{{HOSTNAME_ENCODED}}` | URL-encoded FQDN | `server1.g10.lo` |
+| `{{DOMAIN_SUFFIX}}` | Domain suffix | `.g10.lo` |
+| `{{TEMPLATE_NAME}}` | Template filename | `agent-runner.ign.json` |
+
+Format is auto-detected by file extension:
+
+| Extension | Format | Content-Type |
+|-----------|--------|-------------|
+| `.ign.json` | Ignition | `application/json` |
+| `.ks` | Kickstart | `text/plain` |
+| `.yaml` | Cloud-config | `text/yaml` |
+
+SSH keys and users are merged automatically by the existing `merge_ignition` / `merge_kickstart` functions -- template authors never hardcode SSH keys.
+
+### Template Resolution Priority
+
+When a host requests a provisioning config, CloudID checks these sources in order:
+
+1. **Oneshot check** -- if the host already completed a oneshot template, return nothing (boot from local disk)
+2. **BMH `spec.template`** -- the BareMetalHost CRD can specify a template (format: `fcos/agent-runner.ign.json` or just `agent-runner.ign.json` with image type derived from `spec.image`)
+3. **REST API assignment** -- assignments created via `PUT /api/v1/assignments/{hostname}`, stored in `/var/lib/cloudid/assignments.json`
+4. **Config-based assignment** -- `[[templates.assignments]]` in config.toml (bootstrap fallback)
+5. **No match** -- fall back to default behavior (generate config from identity pipeline only)
+
+### Creating Templates
+
+```bash
+# Create an Ignition template for FCOS agent runners
+curl -s -X PUT http://cloudid:8090/api/v1/templates/fcos/agent-runner.ign.json \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "mode": "oneshot",
+    "content": "{\"ignition\":{\"version\":\"3.4.0\"},\"storage\":{\"disks\":[{\"device\":\"/dev/sda\",\"wipeTable\":true,\"partitions\":[{\"label\":\"root\",\"sizeMiB\":0}]}],\"filesystems\":[{\"path\":\"/\",\"device\":\"/dev/disk/by-partlabel/root\",\"format\":\"xfs\",\"wipeFilesystem\":true}],\"files\":[{\"path\":\"/etc/hostname\",\"mode\":420,\"overwrite\":true,\"contents\":{\"source\":\"data:,{{HOSTNAME_ENCODED}}\"}}]},\"systemd\":{\"units\":[{\"name\":\"cloudid-provisioned.service\",\"enabled\":true,\"contents\":\"[Unit]\\nDescription=Mark oneshot provisioning complete\\nAfter=multi-user.target\\nConditionFirstBoot=yes\\n\\n[Service]\\nType=oneshot\\nExecStart=/usr/bin/curl -s -X POST http://169.254.169.254/config/provisioned\\n\\n[Install]\\nWantedBy=multi-user.target\"}]}}"
+  }'
+```
+
+```bash
+# Create a kickstart template for Fedora
+curl -s -X PUT http://cloudid:8090/api/v1/templates/fedora/base-server.ks \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "mode": "oneshot",
+    "content": "#version=RHEL9\nlang en_US.UTF-8\nkeyboard us\ntimezone UTC --utc\nnetwork --hostname={{HOSTNAME}}\nrootpw --lock\n\nautopart --type=lvm\nclearpart --all --initlabel\n\n%packages\n@core\n%end\n\nreboot\n"
+  }'
+```
+
+### Assigning Templates to Hosts
+
+There are three ways to assign templates:
+
+**1. BMH CRD (highest priority)**
+
+```yaml
+apiVersion: v1
+kind: BareMetalHost
+metadata:
+  name: server1
+  namespace: g10
+spec:
+  hostname: server1
+  image: fcos-44
+  template: fcos/agent-runner.ign.json   # explicit image_type/name
+  # or just: template: agent-runner.ign.json  # image type derived from spec.image
+```
+
+**2. REST API assignment**
+
+```bash
+# Assign template to a specific host
+curl -s -X PUT http://cloudid:8090/api/v1/assignments/server1 \
+  -H 'Content-Type: application/json' \
+  -d '{"image_type": "fcos", "template": "agent-runner.ign.json"}'
+
+# List all assignments
+curl -s http://cloudid:8090/api/v1/assignments
+
+# Remove assignment
+curl -s -X DELETE http://cloudid:8090/api/v1/assignments/server1
+```
+
+**3. Config file (lowest priority, bootstrap fallback)**
+
+```toml
+[[templates.assignments]]
+hosts = ["server1", "server2"]
+template = "fcos/agent-runner.ign.json"
+
+# Wildcard: assign to all hosts
+[[templates.assignments]]
+hosts = ["*"]
+template = "fcos/agent-runner.ign.json"
+```
+
+### Oneshot Templates
+
+Oneshot templates are served on first boot only. After the host completes provisioning, it calls `POST /config/provisioned` and subsequent boots receive no template (the host boots from local disk).
+
+```bash
+# Host marks itself as provisioned (called by the host itself, identified by source IP)
+curl -s -X POST http://169.254.169.254/config/provisioned
+
+# View all oneshot completion states
+curl -s http://cloudid:8090/api/v1/oneshot
+
+# Reset a host for re-provisioning (serves the template again on next boot)
+curl -s -X DELETE http://cloudid:8090/api/v1/oneshot/server1
+```
+
+For FCOS, include a systemd oneshot unit in the template that calls `/config/provisioned` on first boot:
+
+```json
+{
+  "systemd": {
+    "units": [{
+      "name": "cloudid-provisioned.service",
+      "enabled": true,
+      "contents": "[Unit]\nDescription=Mark oneshot complete\nAfter=multi-user.target\nConditionFirstBoot=yes\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/curl -s -X POST http://169.254.169.254/config/provisioned\n\n[Install]\nWantedBy=multi-user.target"
+    }]
+  }
+}
+```
+
+### Backup and Restore
+
+Export all templates as a JSON bundle for backup or migration:
+
+```bash
+# Export all templates
+curl -s http://cloudid:8090/api/v1/templates/backup > templates-backup.json
+
+# Import templates (overwrites existing with same name)
+curl -s -X POST http://cloudid:8090/api/v1/templates/restore \
+  -H 'Content-Type: application/json' \
+  -d @templates-backup.json
+```
+
+Bundle format:
+
+```json
+{
+  "version": 1,
+  "exported_at": "2026-03-17T03:00:00Z",
+  "templates": [
+    {
+      "image_type": "fcos",
+      "name": "agent-runner.ign.json",
+      "format": "ignition",
+      "mode": "oneshot",
+      "content": "{ ... }"
+    }
+  ]
+}
+```
+
+### Diagnostics
+
+Check what template would be served for a host:
+
+```bash
+# From the host itself (uses source IP)
+curl -s http://169.254.169.254/config/template
+
+# Response:
+{
+  "ip": "192.168.10.10",
+  "hostname": "server1",
+  "template": "fcos/agent-runner.ign.json",
+  "source": "rest_assignment",
+  "oneshot_completed": false
+}
+```
+
+### Image Type Matching
+
+When a BMH specifies `spec.template: agent-runner.ign.json` (without an image type prefix), CloudID extracts the base image type from `spec.image`:
+
+| BMH `spec.image` | Extracted type | Template path |
+|-------------------|---------------|---------------|
+| `fcos-44` | `fcos` | `fcos/agent-runner.ign.json` |
+| `fedora-9` | `fedora` | `fedora/agent-runner.ign.json` |
+| `ubuntu-24.04` | `ubuntu` | `ubuntu/agent-runner.ign.json` |
 
 ### User Data (cloud-config)
 
@@ -198,6 +456,15 @@ domain_suffix = ".g10.lo"
 availability_zone = "gt"
 cache_rebuild_interval_secs = 30
 dhcp_sources = ["http://dns.g10.lo:8080/api/v1/leases"]
+
+# Template system (PVC mount point)
+[templates]
+data_dir = "/var/lib/cloudid"
+
+# Optional: config-based template assignments (bootstrap fallback)
+# [[templates.assignments]]
+# hosts = ["*"]
+# template = "fcos/agent-runner.ign.json"
 
 # Static identity -- works without AMO NATS
 [[static_users]]
@@ -297,7 +564,7 @@ CLOUDID_METADATA_URL=http://169.254.169.254
 
 ## Deploy
 
-CloudIdOperator runs as a container managed by mkube's deploy controller at `192.168.200.20` on the gt network.
+CloudIdOperator runs as a container managed by mkube's deploy controller at `192.168.200.20` on the gt network. A PVC is mounted at `/var/lib/cloudid` for persistent template storage, assignments, and oneshot state.
 
 ```bash
 # Build
@@ -307,6 +574,13 @@ cargo build --release --target x86_64-unknown-linux-musl
 podman build --platform linux/arm64 -t registry.gt.lo:5000/cloudid:edge .
 podman push --tls-verify=false registry.gt.lo:5000/cloudid:edge
 ```
+
+### Volumes
+
+| Mount | Source | Purpose |
+|-------|--------|---------|
+| `/etc/cloudid` | ConfigMap `cloudid-config` | Config file and SSH public key files |
+| `/var/lib/cloudid` | PVC `cloudid-data` | Templates, assignments, oneshot state |
 
 ### Prerequisites
 
