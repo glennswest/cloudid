@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-18
+- **fix:** Normalize Ignition `inline` contents to `source` data URI format — Ignition v3.4.0 rejects `overwrite: true` with `inline` contents
 - **fix:** Template extension resolution — BMH refs like `fcos/runner` now resolve to `runner.ign.json` on disk (tries `.ign.json`, `.ks`, `.yaml` extensions)
 
 ### 2026-03-17

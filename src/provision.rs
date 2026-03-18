@@ -165,6 +165,10 @@ fn merge_ignition(base: &Value, meta: &HostMetadata) -> String {
     // Set hostname in storage if not already set
     ensure_hostname_file(&mut config, &meta.hostname);
 
+    // Normalize file entries: convert "inline" to "source" data URI format.
+    // Ignition v3.4.0 rejects overwrite=true when contents uses "inline" instead of "source".
+    normalize_file_contents(&mut config);
+
     serde_json::to_string_pretty(&config).unwrap_or_default()
 }
 
@@ -224,6 +228,29 @@ fn ensure_hostname_file(config: &mut Value, fqdn: &str) {
                 "source": format!("data:,{}", encoded)
             }
         }));
+    }
+}
+
+/// Normalize file contents: convert "inline" to "source" data URI format.
+/// Ignition v3.4.0 rejects `overwrite: true` when contents uses "inline" without "source".
+fn normalize_file_contents(config: &mut Value) {
+    let files = config
+        .pointer_mut("/storage/files")
+        .and_then(|f| f.as_array_mut());
+
+    if let Some(files) = files {
+        for file in files.iter_mut() {
+            if let Some(contents) = file.get_mut("contents") {
+                if let Some(obj) = contents.as_object_mut() {
+                    if let Some(inline_val) = obj.remove("inline") {
+                        if let Some(text) = inline_val.as_str() {
+                            let encoded = url_encode(text);
+                            obj.insert("source".to_string(), serde_json::json!(format!("data:,{}", encoded)));
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
