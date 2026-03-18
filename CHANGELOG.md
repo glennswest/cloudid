@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### 2026-03-17
+- **feat:** stormd process manager integration — stormd as PID 1 with SSH access, structured logging, and restart policies
+- **build:** Dockerfile updated to use stormd as entrypoint with cloudid as supervised process
+- **build:** build.sh now includes stormd binary from `../stormd/target/aarch64-unknown-linux-musl/release/stormd`
+- **build:** Added `deploy/stormd-config.toml` — stormd supervisor config for cloudid container
+- **build:** Health probes updated to use stormd's `/api/v1/health` endpoint on port 9080
 - **feat:** Template system — REST API for managing provisioning templates (CRUD, backup/restore)
 - **feat:** Template assignments — assign templates to hosts via REST API or config
 - **feat:** Oneshot templates — first-boot-only templates with completion tracking
