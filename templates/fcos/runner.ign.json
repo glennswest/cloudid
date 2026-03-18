@@ -1,0 +1,71 @@
+{
+  "ignition": {
+    "version": "3.4.0"
+  },
+  "storage": {
+    "disks": [
+      {
+        "device": "/dev/sda",
+        "wipeTable": true,
+        "partitions": [
+          {
+            "label": "data",
+            "number": 1
+          }
+        ]
+      }
+    ],
+    "filesystems": [
+      {
+        "device": "/dev/disk/by-partlabel/data",
+        "format": "xfs",
+        "path": "/var/data",
+        "label": "data",
+        "wipeFilesystem": true
+      }
+    ],
+    "files": [
+      {
+        "path": "/etc/hostname",
+        "mode": 420,
+        "contents": {
+          "inline": "{{HOSTNAME}}"
+        },
+        "overwrite": true
+      },
+      {
+        "path": "/usr/local/bin/mkube-agent",
+        "mode": 493,
+        "contents": {
+          "source": "http://192.168.200.2:8082/api/v1/bootconfigs/coreos-agent/files/mkube-agent"
+        }
+      },
+      {
+        "path": "/etc/mkube-agent.env",
+        "mode": 420,
+        "contents": {
+          "inline": "MKUBE_API=http://192.168.200.2:8082\nHOSTNAME={{HOSTNAME}}\n"
+        }
+      }
+    ]
+  },
+  "systemd": {
+    "units": [
+      {
+        "name": "var-data-containers-setup.service",
+        "enabled": true,
+        "contents": "[Unit]\nDescription=Create /var/data/containers directory\nAfter=var-data.mount\nRequires=var-data.mount\nBefore=var-lib-containers.mount\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/mkdir -p /var/data/containers\n\n[Install]\nWantedBy=local-fs.target\n"
+      },
+      {
+        "name": "var-lib-containers.mount",
+        "enabled": true,
+        "contents": "[Unit]\nDescription=Container storage on local disk\nAfter=var-data-containers-setup.service\nRequires=var-data-containers-setup.service\n\n[Mount]\nWhat=/var/data/containers\nWhere=/var/lib/containers\nType=none\nOptions=bind\n\n[Install]\nWantedBy=local-fs.target\n"
+      },
+      {
+        "name": "mkube-agent.service",
+        "enabled": true,
+        "contents": "[Unit]\nDescription=mkube batch runner agent\nAfter=network-online.target var-data.mount\nWants=network-online.target\nRequires=var-data.mount\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nEnvironmentFile=/etc/mkube-agent.env\nExecStart=/usr/local/bin/mkube-agent\nWorkingDirectory=/var/data\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"
+      }
+    ]
+  }
+}
