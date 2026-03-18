@@ -237,6 +237,7 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 
 ### In Progress
 <!-- - [ ] (started YYYY-MM-DD) Task description -->
+- [x] Container identity via namespace ownership — containers get SSH keys from namespace owner
 
 ### Completed
 - [x] Phase 1: Project scaffolding (Cargo.toml, config, models, server skeleton)

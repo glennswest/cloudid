@@ -1,4 +1,4 @@
-use crate::cache::IdentityState;
+use crate::cache::{ContainerInfo, IdentityState};
 use crate::config::MetadataConfig;
 use crate::model::{
     CloudConfig, CloudConfigUser, HostAccessResource, HostMetadata, PublicKeyEntry, Subject,
@@ -128,6 +128,73 @@ pub fn resolve_host(
     })
 }
 
+/// Resolve metadata for a container based on namespace ownership.
+///
+/// Direct mapping: namespace owner -> SSH keys for "admin" user.
+/// No HostAccess rule matching — the namespace owner IS the identity.
+pub fn resolve_container(
+    ip: IpAddr,
+    info: &ContainerInfo,
+    owner: &str,
+    identity: &IdentityState,
+    config: &MetadataConfig,
+) -> Option<HostMetadata> {
+    let user_res = identity.users.get(owner)?;
+
+    // Skip disabled users
+    if let Some(ref status) = user_res.status {
+        if !status.enabled {
+            return None;
+        }
+    }
+
+    let user_keys: Vec<String> = user_res
+        .spec
+        .ssh_public_keys
+        .iter()
+        .map(|k| k.key.clone())
+        .collect();
+
+    if user_keys.is_empty() {
+        return None;
+    }
+
+    let public_keys = vec![PublicKeyEntry {
+        ssh_user: "admin".to_string(),
+        keys: user_keys.clone(),
+    }];
+
+    let cloud_config = CloudConfig {
+        users: vec![CloudConfigUser {
+            name: "admin".to_string(),
+            uid: user_res.spec.uid.to_string(),
+            groups: vec!["wheel".to_string()],
+            shell: user_res.spec.shell.clone(),
+            sudo: Some("ALL=(ALL) NOPASSWD:ALL".to_string()),
+            ssh_authorized_keys: user_keys,
+        }],
+    };
+
+    let user_data = format!(
+        "#cloud-config\n{}",
+        serde_json::to_string_pretty(&cloud_config).unwrap_or_default()
+    );
+
+    let fqdn = format!("{}{}", info.hostname, config.domain_suffix);
+    let instance_id = format!("{}/{}", info.namespace, info.pod_name);
+
+    Some(HostMetadata {
+        instance_id,
+        hostname: fqdn,
+        local_hostname: info.hostname.clone(),
+        local_ipv4: ip.to_string(),
+        availability_zone: config.availability_zone.clone(),
+        public_keys,
+        user_data,
+        cloud_config,
+    })
+}
+
 /// Find all HostAccess rules that match a given hostname.
 /// Supports wildcard: hosts = ["*"] matches all hostnames.
 fn find_matching_rules<'a>(
@@ -203,6 +270,7 @@ fn expand_subjects(subjects: &[Subject], identity: &IdentityState) -> Vec<String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cache::ContainerInfo;
     use crate::model::*;
 
     fn make_identity() -> IdentityState {
@@ -370,5 +438,86 @@ mod tests {
         let meta = result.unwrap();
         assert_eq!(meta.instance_id, "any-random-host");
         assert!(meta.public_keys.iter().any(|pk| pk.ssh_user == "root"));
+    }
+
+    #[test]
+    fn test_resolve_container() {
+        let identity = make_identity();
+        let config = MetadataConfig {
+            domain_suffix: ".gt.lo".to_string(),
+            availability_zone: "gt".to_string(),
+            cache_rebuild_interval_secs: 30,
+            dhcp_sources: vec![],
+        };
+
+        let ip: IpAddr = "192.168.200.50".parse().unwrap();
+        let info = ContainerInfo {
+            namespace: "gt".to_string(),
+            pod_name: "stormd".to_string(),
+            container_name: "main".to_string(),
+            hostname: "main.stormd".to_string(),
+        };
+
+        let result = resolve_container(ip, &info, "gwest", &identity, &config);
+        assert!(result.is_some());
+
+        let meta = result.unwrap();
+        assert_eq!(meta.instance_id, "gt/stormd");
+        assert_eq!(meta.hostname, "main.stormd.gt.lo");
+        assert_eq!(meta.local_ipv4, "192.168.200.50");
+        assert_eq!(meta.public_keys.len(), 1);
+        assert_eq!(meta.public_keys[0].ssh_user, "admin");
+        assert!(meta.public_keys[0].keys[0].contains("AAAA_TEST_KEY"));
+        assert_eq!(meta.cloud_config.users.len(), 1);
+        assert_eq!(meta.cloud_config.users[0].name, "admin");
+        assert!(meta.cloud_config.users[0].groups.contains(&"wheel".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_container_unknown_owner() {
+        let identity = make_identity();
+        let config = MetadataConfig {
+            domain_suffix: ".gt.lo".to_string(),
+            availability_zone: "gt".to_string(),
+            cache_rebuild_interval_secs: 30,
+            dhcp_sources: vec![],
+        };
+
+        let ip: IpAddr = "192.168.200.51".parse().unwrap();
+        let info = ContainerInfo {
+            namespace: "gt".to_string(),
+            pod_name: "test-pod".to_string(),
+            container_name: "main".to_string(),
+            hostname: "main.test-pod".to_string(),
+        };
+
+        let result = resolve_container(ip, &info, "nonexistent-user", &identity, &config);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolve_container_disabled_owner() {
+        let mut identity = make_identity();
+        if let Some(user) = identity.users.get_mut("gwest") {
+            user.status = Some(ResourceStatus { enabled: false });
+        }
+
+        let config = MetadataConfig {
+            domain_suffix: ".gt.lo".to_string(),
+            availability_zone: "gt".to_string(),
+            cache_rebuild_interval_secs: 30,
+            dhcp_sources: vec![],
+        };
+
+        let ip: IpAddr = "192.168.200.52".parse().unwrap();
+        let info = ContainerInfo {
+            namespace: "gt".to_string(),
+            pod_name: "stormd".to_string(),
+            container_name: "main".to_string(),
+            hostname: "main.stormd".to_string(),
+        };
+
+        let result = resolve_container(ip, &info, "gwest", &identity, &config);
+        assert!(result.is_none());
     }
 }

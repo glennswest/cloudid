@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### 2026-03-18
+- **feat:** Container identity via namespace ownership — containers get SSH keys from namespace owner's identity (admin user with owner's keys, wheel group, sudo)
+- **feat:** Container watcher — polls mkube for pod IPs and namespace owners (`vkube.io/owner` annotation), rebuilds metadata cache
+- **feat:** `resolve_container()` — direct owner-to-keys mapping bypassing HostAccess rules, serves admin user with owner's SSH keys
+- **feat:** K8s Pod/Namespace deserialize types for mkube API consumption
+- **test:** 3 new tests: container resolution, unknown owner, disabled owner (20 total)
 - **fix:** Normalize Ignition `inline` contents to `source` data URI format — Ignition v3.4.0 rejects `overwrite: true` with `inline` contents
 - **fix:** Template extension resolution — BMH refs like `fcos/runner` now resolve to `runner.ign.json` on disk (tries `.ign.json`, `.ks`, `.yaml` extensions)
 

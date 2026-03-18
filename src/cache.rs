@@ -42,6 +42,24 @@ pub struct IdentityState {
     pub host_groups: HashMap<String, HostGroupResource>,
 }
 
+/// Container identity info for a single container IP.
+#[derive(Debug, Clone)]
+pub struct ContainerInfo {
+    pub namespace: String,
+    pub pod_name: String,
+    pub container_name: String,
+    pub hostname: String, // e.g. "main.cloudid" (container.pod format)
+}
+
+/// Container state from mkube (pod IPs + namespace owners).
+#[derive(Debug, Default)]
+pub struct ContainerState {
+    /// Container IP -> ContainerInfo
+    pub ip_to_container: HashMap<IpAddr, ContainerInfo>,
+    /// Namespace name -> owner username
+    pub namespace_owners: HashMap<String, String>,
+}
+
 /// BMH state from mkube (IP -> hostname mappings, BMH labels, full BMH data).
 #[derive(Debug, Default)]
 pub struct BmhState {
@@ -65,6 +83,8 @@ pub struct AppState {
     pub identity: RwLock<IdentityState>,
     /// mkube BMH data
     pub bmh: RwLock<BmhState>,
+    /// Container identity state (pod IPs + namespace owners)
+    pub containers: RwLock<ContainerState>,
     /// Discovered data network namespaces (from mkube /api/v1/networks)
     pub data_namespaces: RwLock<Vec<String>>,
     /// Template store (file-based on PVC)
@@ -100,6 +120,7 @@ impl AppState {
             imds_tokens: DashMap::new(),
             identity: RwLock::new(identity),
             bmh: RwLock::new(BmhState::default()),
+            containers: RwLock::new(ContainerState::default()),
             data_namespaces: RwLock::new(Vec::new()),
             template_store,
             assignments: RwLock::new(assignments),
@@ -118,16 +139,19 @@ impl AppState {
         state
     }
 
-    /// Rebuild the entire metadata cache from current identity + BMH state.
-    /// Called when either data source changes.
+    /// Rebuild the entire metadata cache from current identity + BMH + container state.
+    /// Called when any data source changes.
     pub async fn rebuild_cache(&self) {
         let identity = self.identity.read().await;
         let bmh = self.bmh.read().await;
+        let containers = self.containers.read().await;
 
         let old_count = self.metadata_cache.len();
         self.metadata_cache.clear();
 
         let mut count = 0;
+
+        // Pass 1: Bare metal hosts (BMH)
         for (ip, hostname) in &bmh.ip_to_hostname {
             let labels = bmh.host_labels.get(hostname);
             match resolve::resolve_host(
@@ -147,10 +171,43 @@ impl AppState {
             }
         }
 
+        // Pass 2: Containers (namespace owner -> admin keys)
+        let mut container_count = 0;
+        for (ip, info) in &containers.ip_to_container {
+            if let Some(owner) = containers.namespace_owners.get(&info.namespace) {
+                match resolve::resolve_container(
+                    *ip,
+                    info,
+                    owner,
+                    &identity,
+                    &self.config.metadata,
+                ) {
+                    Some(meta) => {
+                        self.metadata_cache.insert(*ip, meta);
+                        count += 1;
+                        container_count += 1;
+                    }
+                    None => {
+                        debug!(
+                            namespace = info.namespace,
+                            owner,
+                            %ip,
+                            "no keys resolved for container"
+                        );
+                    }
+                }
+            }
+        }
+
         if count != old_count {
-            info!(hosts = count, previous = old_count, "metadata cache rebuilt");
+            info!(
+                hosts = count,
+                containers = container_count,
+                previous = old_count,
+                "metadata cache rebuilt"
+            );
         } else {
-            debug!(hosts = count, "metadata cache rebuilt (no change)");
+            debug!(hosts = count, containers = container_count, "metadata cache rebuilt (no change)");
         }
     }
 
@@ -172,10 +229,20 @@ impl AppState {
 
         if let Some(hostname) = bmh.ip_to_hostname.get(ip) {
             let labels = bmh.host_labels.get(hostname);
-            resolve::resolve_host(*ip, hostname, labels, &identity, &self.config.metadata)
-        } else {
-            None
+            if let Some(meta) = resolve::resolve_host(*ip, hostname, labels, &identity, &self.config.metadata) {
+                return Some(meta);
+            }
         }
+
+        // Fallback: check container state
+        let containers = self.containers.read().await;
+        if let Some(info) = containers.ip_to_container.get(ip) {
+            if let Some(owner) = containers.namespace_owners.get(&info.namespace) {
+                return resolve::resolve_container(*ip, info, owner, &identity, &self.config.metadata);
+            }
+        }
+
+        None
     }
 
     /// Get the full BareMetalHost data for a hostname.

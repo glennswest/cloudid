@@ -59,6 +59,12 @@ async fn main() -> Result<()> {
                 cloudid::watcher::bmh::start(bmh_state).await;
             });
 
+            // Spawn container watcher (namespace ownership -> SSH keys)
+            let container_state = Arc::clone(&state);
+            tokio::spawn(async move {
+                cloudid::watcher::container::start(container_state).await;
+            });
+
             // Spawn metadata route manager (discovers data networks from mkube,
             // ensures DHCP option 121 routes 169.254.169.254 via gateway)
             let mkube_url = config.mkube.url.clone();

@@ -216,6 +216,55 @@ pub struct WatchEvent {
     pub object: BareMetalHost,
 }
 
+// --- K8s Pod/Namespace types (from mkube API) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct K8sObjectMeta {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub namespace: String,
+    #[serde(default)]
+    pub annotations: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct K8sContainerStatus {
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct K8sPodStatus {
+    #[serde(default)]
+    pub pod_ip: String,
+    #[serde(default)]
+    pub container_statuses: Vec<K8sContainerStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct K8sPod {
+    pub metadata: K8sObjectMeta,
+    #[serde(default)]
+    pub status: Option<K8sPodStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct K8sPodList {
+    pub items: Vec<K8sPod>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct K8sNamespace {
+    pub metadata: K8sObjectMeta,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct K8sNamespaceList {
+    pub items: Vec<K8sNamespace>,
+}
+
 // --- DHCP lease types (from MicroDNS) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
