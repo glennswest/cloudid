@@ -2,7 +2,7 @@
   "ignition": { "version": "3.4.0" },
   "storage": {
     "directories": [
-      { "path": "/data", "mode": 493 }
+      { "path": "/var/data", "mode": 493 }
     ],
     "files": [
       {
@@ -20,7 +20,7 @@
       {
         "name": "mkube-agent.service",
         "enabled": true,
-        "contents": "[Unit]\nDescription=mkube job agent (container)\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nRestart=always\nRestartSec=5\nExecStartPre=-/usr/bin/podman rm -f mkube-agent\nExecStart=/usr/bin/podman run --name mkube-agent --rm --network host --privileged -v /data:/data -e MKUBE_API=http://192.168.200.2:8082 --pull=always registry.gt.lo:5000/mkube-agent:edge\nExecStop=/usr/bin/podman stop mkube-agent\nTimeoutStartSec=600\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"
+        "contents": "[Unit]\nDescription=mkube job agent (container)\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nRestart=always\nRestartSec=5\nExecStartPre=-/usr/bin/podman rm -f mkube-agent\nExecStart=/usr/bin/podman run --name mkube-agent --rm --network host --privileged -v /var/data:/data -e MKUBE_API=http://192.168.200.2:8082 --pull=always registry.gt.lo:5000/mkube-agent:edge\nExecStop=/usr/bin/podman stop mkube-agent\nTimeoutStartSec=600\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"
       }
     ]
   }
