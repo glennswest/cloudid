@@ -262,19 +262,38 @@ impl TemplateStore {
     }
 
     /// Get a single template with full content.
+    ///
+    /// If the exact name isn't found, tries appending known extensions
+    /// (`.ign.json`, `.ks`, `.yaml`) so that BMH refs like `"fcos/runner"`
+    /// resolve to `runner.ign.json` on disk.
     pub async fn get(
         &self,
         image_type: &str,
         name: &str,
     ) -> anyhow::Result<Option<LoadedTemplate>> {
         let path = self.template_path(image_type, name);
-        if !path.exists() {
-            return Ok(None);
-        }
+        let (resolved_path, resolved_name) = if path.exists() {
+            (path, name.to_string())
+        } else {
+            // Try known extensions
+            let mut found = None;
+            for ext in &[".ign.json", ".ks", ".yaml"] {
+                let candidate = format!("{}{}", name, ext);
+                let candidate_path = self.template_path(image_type, &candidate);
+                if candidate_path.exists() {
+                    found = Some((candidate_path, candidate));
+                    break;
+                }
+            }
+            match found {
+                Some(f) => f,
+                None => return Ok(None),
+            }
+        };
 
-        let content = fs::read_to_string(&path).await?;
+        let content = fs::read_to_string(&resolved_path).await?;
         let meta = self
-            .read_meta(image_type, name)
+            .read_meta(image_type, &resolved_name)
             .await
             .unwrap_or_else(|| TemplateMeta {
                 mode: TemplateMode::default(),
@@ -284,8 +303,8 @@ impl TemplateStore {
 
         Ok(Some(LoadedTemplate {
             image_type: image_type.to_string(),
-            name: name.to_string(),
-            format: TemplateFormat::from_filename(name),
+            name: resolved_name.clone(),
+            format: TemplateFormat::from_filename(&resolved_name),
             mode: meta.mode,
             content,
             created_at: meta.created_at,

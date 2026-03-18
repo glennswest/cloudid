@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-18
+- **fix:** Template extension resolution — BMH refs like `fcos/runner` now resolve to `runner.ign.json` on disk (tries `.ign.json`, `.ks`, `.yaml` extensions)
+
 ### 2026-03-17
 - **feat:** stormd process manager integration — stormd as PID 1 with SSH access, structured logging, and restart policies
 - **build:** Dockerfile updated to use stormd as entrypoint with cloudid as supervised process
