@@ -269,8 +269,9 @@ pub struct K8sNamespaceList {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DhcpLease {
+    #[serde(alias = "ip_addr")]
     pub ip: String,
-    #[serde(default)]
+    #[serde(default, alias = "mac_addr")]
     pub mac: String,
     #[serde(default)]
     pub hostname: String,
