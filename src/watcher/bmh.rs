@@ -163,6 +163,8 @@ fn apply_bmh_to_state(
     }
 }
 
+// TODO: Remove DHCP lease polling. Hosts should get hostnames via DHCP option 12,
+// and cloudid should rely on BMH objects + reverse DNS instead of pulling the lease table.
 async fn load_dhcp_leases(client: &reqwest::Client, state: &Arc<AppState>) {
     for source in &state.config.metadata.dhcp_sources {
         match client
