@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 2026-03-21
+- **docs:** Added Known Issues section to README.md (cross-network DNS resolution, agent-runner registry hostname)
+- **docs:** Added Known Issues and Changes Needed sections to CLAUDE.md
+- **docs:** Added lesson learned: systemd-resolved DHCP domain scoping behavior
+
 ### 2026-03-18
 - **feat:** Container identity via namespace ownership — containers get SSH keys from namespace owner's identity (admin user with owner's keys, wheel group, sudo)
 - **feat:** Container watcher — polls mkube for pod IPs and namespace owners (`vkube.io/owner` annotation), rebuilds metadata cache

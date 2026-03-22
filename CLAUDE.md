@@ -253,6 +253,41 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 
 ---
 
+## Known Issues
+
+### Cross-Network DNS Resolution Failure
+- **Status**: Open -- workaround applied (cross-network DNS records in MicroDNS)
+- **Problem**: Hosts on non-gt networks (e.g., g10) cannot resolve `registry.gt.lo` via systemd-resolved. DHCP option 15 (search domain `g10.lo`) causes systemd-resolved to scope the DNS server, refusing to forward queries for other domains like `gt.lo`.
+- **Impact**: mkube-agent service fails to start on cross-network hosts (DNS wait loop times out at 60 iterations)
+- **Root cause**: systemd-resolved + DHCP domain scoping. Direct DNS queries work (`nslookup registry.gt.lo 192.168.10.252` returns 192.168.200.3), but `getent hosts` and `resolvectl query` fail.
+- **Workaround**: Add cross-network records to each MicroDNS instance
+- **Proper fix**: One of: (1) MicroDNS DNS forwarding between zones, (2) DHCP option 119 with `~.` routing domain, (3) systemd-resolved drop-in in ignition templates with `Domains=~.`
+
+### MicroDNS NXDOMAIN for AAAA on A-Only Records
+- **Status**: Open -- may contribute to systemd-resolved failures
+- **Problem**: When MicroDNS has an A record but no AAAA record for a name, it returns NXDOMAIN for the AAAA query instead of NOERROR with empty answer. systemd-resolved may treat this as the name not existing.
+- **Impact**: Potentially worsens cross-network DNS failures
+
+---
+
+## Changes Needed
+
+### Template Improvements
+- [ ] Consider adding systemd-resolved drop-in to ignition templates (`Domains=~.`) to fix cross-network DNS
+- [ ] Consider using registry IP (192.168.200.3) instead of hostname in agent-runner template as fallback
+- [ ] agent-runner DNS wait loop should log which attempt it's on (currently silent during the 60 retries)
+
+### MicroDNS Integration
+- [ ] MicroDNS should return NOERROR (not NXDOMAIN) for AAAA queries when A record exists
+- [ ] MicroDNS should support DNS forwarding between zones (g10 -> gt, etc.)
+- [ ] Consider adding DHCP option 119 support to MicroDNS for routing domains
+
+### Testing
+- [ ] Integration test for cross-network DNS resolution in ignition templates
+- [ ] Test agent-runner template on non-gt networks
+
+---
+
 ## Lessons Learned
 
 - **Self-healing is not optional.** Every known failure mode must have automated detection and correction. A bug that requires manual intervention will waste days. A bug that self-heals wastes minutes.
@@ -260,6 +295,7 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 - **Cache is king.** Precompute everything. The metadata endpoint is on the hot path (every boot). Sub-5ms response time target.
 - **Assume disconnection.** NATS can go down. mkube can go down. AMO can go down. CloudIdOperator must serve from cache indefinitely.
 - **Log, don't crash.** Bad data from NATS, mkube, or AMO should be logged and skipped, never cause a panic.
+- **systemd-resolved scopes DNS by DHCP domain.** When DHCP provides a search domain (option 15), systemd-resolved only uses that link's DNS server for queries matching the domain. Cross-domain queries silently fail unless a routing domain (`~.`) or fallback DNS is configured. Direct `nslookup <name> <server>` will work but `getent hosts` will not -- always test with `getent`/`resolvectl query`, not `nslookup`.
 
 ---
 

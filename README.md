@@ -613,6 +613,32 @@ One-time MikroTik DNAT rule (already configured):
 - **CLI**: clap 4
 - **Container**: `FROM scratch` (fully static musl binary)
 
+## Known Issues
+
+### Cross-Network DNS Resolution (systemd-resolved + DHCP domain scoping)
+
+**Affected**: Any host on a non-gt network (e.g., g10) that needs to resolve `registry.gt.lo` or other cross-network hostnames.
+
+**Symptom**: `getent hosts registry.gt.lo` fails, causing the mkube-agent DNS wait loop to time out. Direct queries (`nslookup registry.gt.lo 192.168.10.252`) succeed, but systemd-resolved refuses to use the link DNS server for domains outside the DHCP-provided search domain.
+
+**Root cause**: When DHCP provides a search domain (e.g., `g10.lo` via option 15), systemd-resolved scopes the link's DNS server to that domain. Queries for other domains (e.g., `gt.lo`) are not forwarded to that DNS server, even though `+DefaultRoute: yes` is set. There is no fallback DNS server configured, so the query fails.
+
+**Current workaround**: Add cross-network DNS records to each network's MicroDNS (e.g., add a `gt.lo` zone or individual records like `registry.gt.lo` to g10's MicroDNS). The MicroDNS NXDOMAIN-vs-NOERROR behavior for AAAA queries on A-only records may also need fixing.
+
+**Proper fix options**:
+1. Configure MicroDNS DNS forwarding so each instance can resolve other network zones
+2. Add DHCP option 119 (search domain list) with `~.` routing domain to tell systemd-resolved to route all queries through the link DNS server
+3. Remove the DHCP domain option entirely (makes the DNS server handle all queries)
+4. Add a systemd-resolved drop-in in ignition templates that sets `Domains=~.` globally
+
+### Agent Runner Template Uses Hostname for Registry
+
+**Affected**: `agent-runner.ign.json` template references `registry.gt.lo` by hostname.
+
+**Symptom**: On networks where `registry.gt.lo` cannot be resolved, the agent service fails to start (stuck in DNS wait loop, then image pull failures).
+
+**Mitigation**: Ensure cross-network DNS resolution works (see above), or change the template to use the registry IP directly (`192.168.200.3`). Using the IP is less maintainable but eliminates the DNS dependency.
+
 ## Relationship to AMO
 
 CloudIdOperator reads identity data from AMO. AMO is the source of truth for users, orgs, groups, and access policies. CloudIdOperator transforms that data into machine-consumable metadata (SSH keys, cloud-config, Ignition, kickstart) and serves it to hosts on boot and periodically.
