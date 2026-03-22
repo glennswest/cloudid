@@ -1,8 +1,26 @@
 {
   "ignition": { "version": "3.4.0" },
   "storage": {
-    "directories": [
-      { "path": "/var/data", "mode": 493 }
+    "disks": [
+      {
+        "device": "/dev/sda",
+        "wipeTable": false,
+        "partitions": [
+          {
+            "label": "data",
+            "number": 1
+          }
+        ]
+      }
+    ],
+    "filesystems": [
+      {
+        "device": "/dev/disk/by-partlabel/data",
+        "format": "xfs",
+        "path": "/var/data",
+        "label": "data",
+        "wipeFilesystem": false
+      }
     ],
     "files": [
       {
@@ -29,14 +47,19 @@
         "mask": true
       },
       {
+        "name": "var-data.mount",
+        "enabled": true,
+        "contents": "[Unit]\nDescription=Mount data disk\n\n[Mount]\nWhat=/dev/disk/by-partlabel/data\nWhere=/var/data\nType=xfs\n\n[Install]\nWantedBy=local-fs.target\n"
+      },
+      {
         "name": "agent-storage-setup.service",
         "enabled": true,
-        "contents": "[Unit]\nDescription=Create agent container storage directory\nBefore=mkube-agent.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/mkdir -p /var/data/agent-storage\n\n[Install]\nWantedBy=multi-user.target\n"
+        "contents": "[Unit]\nDescription=Create agent container storage directory\nAfter=var-data.mount\nRequires=var-data.mount\nBefore=mkube-agent.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/mkdir -p /var/data/agent-storage\n\n[Install]\nWantedBy=multi-user.target\n"
       },
       {
         "name": "mkube-agent.service",
         "enabled": true,
-        "contents": "[Unit]\nDescription=mkube job agent (container)\nAfter=network-online.target agent-storage-setup.service\nWants=network-online.target\nRequires=agent-storage-setup.service\n\n[Service]\nType=simple\nRestart=always\nRestartSec=5\nExecStartPre=/bin/bash -c 'echo Waiting for DNS...; for i in $(seq 1 60); do getent hosts registry.gt.lo && exit 0; sleep 2; done; echo DNS timeout; exit 1'\nExecStartPre=-/usr/bin/podman rm -f mkube-agent\nExecStartPre=-/usr/bin/podman pull --tls-verify=false registry.gt.lo:5000/rawhidedev:latest\nExecStartPre=-/usr/bin/podman pull --tls-verify=false registry.gt.lo:5000/fedoradev:latest\nExecStart=/usr/bin/podman run --name mkube-agent --rm --network host --privileged -v /var/data:/data -v /var/data/agent-storage:/var/lib/containers -e MKUBE_API=http://192.168.200.2:8082 --pull=always registry.gt.lo:5000/mkube-agent:edge\nExecStop=/usr/bin/podman stop mkube-agent\nTimeoutStartSec=900\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"
+        "contents": "[Unit]\nDescription=mkube job agent (container)\nAfter=network-online.target agent-storage-setup.service var-data.mount\nWants=network-online.target\nRequires=agent-storage-setup.service var-data.mount\n\n[Service]\nType=simple\nRestart=always\nRestartSec=5\nExecStartPre=/bin/bash -c 'echo Waiting for DNS...; for i in $(seq 1 60); do getent hosts registry.gt.lo && exit 0; sleep 2; done; echo DNS timeout; exit 1'\nExecStartPre=-/usr/bin/podman rm -f mkube-agent\nExecStartPre=-/usr/bin/podman pull --tls-verify=false registry.gt.lo:5000/rawhidedev:latest\nExecStartPre=-/usr/bin/podman pull --tls-verify=false registry.gt.lo:5000/fedoradev:latest\nExecStart=/usr/bin/podman run --name mkube-agent --rm --network host --privileged -v /var/data:/data -v /var/data/agent-storage:/var/lib/containers -e MKUBE_API=http://192.168.200.2:8082 --pull=always registry.gt.lo:5000/mkube-agent:edge\nExecStop=/usr/bin/podman stop mkube-agent\nTimeoutStartSec=900\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"
       }
     ]
   }
