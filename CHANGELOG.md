@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-21
+- **feat:** nextnfs ignition template — deploys NextNFS server on FCOS with data disk formatting, XFS mount, and containerized NFSv4 server
 - **docs:** Added Known Issues section to README.md (cross-network DNS resolution, agent-runner registry hostname)
 - **docs:** Added Known Issues and Changes Needed sections to CLAUDE.md
 - **docs:** Added lesson learned: systemd-resolved DHCP domain scoping behavior

@@ -1,0 +1,62 @@
+{
+  "ignition": { "version": "3.4.0" },
+  "storage": {
+    "disks": [
+      {
+        "device": "/dev/sda",
+        "wipeTable": false,
+        "partitions": [
+          {
+            "label": "data",
+            "number": 1
+          }
+        ]
+      }
+    ],
+    "filesystems": [
+      {
+        "device": "/dev/disk/by-partlabel/data",
+        "format": "xfs",
+        "path": "/var/data",
+        "label": "data",
+        "wipeFilesystem": false
+      }
+    ],
+    "files": [
+      {
+        "path": "/etc/hostname",
+        "mode": 420,
+        "overwrite": true,
+        "contents": {
+          "source": "data:,{{HOSTNAME_ENCODED}}"
+        }
+      },
+      {
+        "path": "/etc/containers/registries.conf.d/registry-gt-lo.conf",
+        "mode": 420,
+        "contents": {
+          "source": "data:,%5B%5Bregistry%5D%5D%0Alocation%20%3D%20%22registry.gt.lo%3A5000%22%0Ainsecure%20%3D%20true%0A"
+        }
+      }
+    ]
+  },
+  "systemd": {
+    "units": [
+      {
+        "name": "var-data.mount",
+        "enabled": true,
+        "contents": "[Unit]\nDescription=Mount data disk\n\n[Mount]\nWhat=/dev/disk/by-partlabel/data\nWhere=/var/data\nType=xfs\n\n[Install]\nWantedBy=local-fs.target\n"
+      },
+      {
+        "name": "var-data-nfs-setup.service",
+        "enabled": true,
+        "contents": "[Unit]\nDescription=Create NFS export directory\nAfter=var-data.mount\nRequires=var-data.mount\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/mkdir -p /var/data/nfs\n\n[Install]\nWantedBy=local-fs.target\n"
+      },
+      {
+        "name": "nextnfs.service",
+        "enabled": true,
+        "contents": "[Unit]\nDescription=NextNFS server (container)\nAfter=network-online.target var-data-nfs-setup.service\nWants=network-online.target\nRequires=var-data-nfs-setup.service\n\n[Service]\nType=simple\nRestart=always\nRestartSec=5\nExecStartPre=/bin/bash -c 'echo Waiting for DNS...; for i in $(seq 1 60); do getent hosts registry.gt.lo && exit 0; sleep 2; done; echo DNS timeout; exit 1'\nExecStartPre=-/usr/bin/podman rm -f nextnfs\nExecStart=/usr/bin/podman run --name nextnfs --rm --network host -v /var/data/nfs:/export:z --pull=always registry.gt.lo:5000/nextnfs:latest\nExecStop=/usr/bin/podman stop nextnfs\nTimeoutStartSec=300\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"
+      }
+    ]
+  }
+}
