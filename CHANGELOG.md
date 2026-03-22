@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-21
+- **docs:** agent-container-host-networking enhancement — host networking is mandatory for all container templates (not accessible without it)
 - **feat:** nextnfs ignition template — deploys NextNFS server on FCOS with data disk formatting, XFS mount, and containerized NFSv4 server
 - **docs:** Added Known Issues section to README.md (cross-network DNS resolution, agent-runner registry hostname)
 - **docs:** Added Known Issues and Changes Needed sections to CLAUDE.md
