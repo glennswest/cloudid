@@ -43,6 +43,10 @@
   "systemd": {
     "units": [
       {
+        "name": "NetworkManager-wait-online.service",
+        "mask": true
+      },
+      {
         "name": "var-data.mount",
         "enabled": true,
         "contents": "[Unit]\nDescription=Mount data disk\n\n[Mount]\nWhat=/dev/disk/by-partlabel/data\nWhere=/var/data\nType=xfs\n\n[Install]\nWantedBy=local-fs.target\n"

@@ -59,6 +59,10 @@
   "systemd": {
     "units": [
       {
+        "name": "NetworkManager-wait-online.service",
+        "mask": true
+      },
+      {
         "name": "var-data-containers-setup.service",
         "enabled": true,
         "contents": "[Unit]\nDescription=Create /var/data/containers directory\nAfter=var-data.mount\nRequires=var-data.mount\nBefore=var-lib-containers.mount\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/mkdir -p /var/data/containers\n\n[Install]\nWantedBy=local-fs.target\n"

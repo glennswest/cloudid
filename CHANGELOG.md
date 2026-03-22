@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-21
+- **fix:** Mask NetworkManager-wait-online.service in all FCOS templates — iBFT phantom connection causes 60s timeout failure on servers with iSCSI firmware
 - **docs:** agent-container-host-networking enhancement — host networking is mandatory for all container templates (not accessible without it)
 - **feat:** nextnfs ignition template — deploys NextNFS server on FCOS with data disk formatting, XFS mount, and containerized NFSv4 server
 - **docs:** Added Known Issues section to README.md (cross-network DNS resolution, agent-runner registry hostname)

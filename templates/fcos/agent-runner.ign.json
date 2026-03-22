@@ -25,6 +25,10 @@
   "systemd": {
     "units": [
       {
+        "name": "NetworkManager-wait-online.service",
+        "mask": true
+      },
+      {
         "name": "agent-storage-setup.service",
         "enabled": true,
         "contents": "[Unit]\nDescription=Create agent container storage directory\nBefore=mkube-agent.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/mkdir -p /var/data/agent-storage\n\n[Install]\nWantedBy=multi-user.target\n"
