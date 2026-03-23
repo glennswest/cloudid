@@ -73,6 +73,11 @@
         "contents": "[Unit]\nDescription=Container storage on local disk\nAfter=var-data-containers-setup.service\nRequires=var-data-containers-setup.service\n\n[Mount]\nWhat=/var/data/containers\nWhere=/var/lib/containers\nType=none\nOptions=bind\n\n[Install]\nWantedBy=local-fs.target\n"
       },
       {
+        "name": "rpm-ostree-install-packages.service",
+        "enabled": true,
+        "contents": "[Unit]\nDescription=Install iSCSI and io_uring packages\nAfter=network-online.target\nWants=network-online.target\nBefore=mkube-agent.service\nConditionPathExists=!/var/lib/%N.stamp\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/rpm-ostree install --apply-live --idempotent iscsi-initiator-utils liburing\nExecStart=/usr/bin/touch /var/lib/%N.stamp\n\n[Install]\nWantedBy=multi-user.target\n"
+      },
+      {
         "name": "mkube-agent.service",
         "enabled": true,
         "contents": "[Unit]\nDescription=mkube batch runner agent\nAfter=network-online.target var-data.mount\nWants=network-online.target\nRequires=var-data.mount\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nEnvironmentFile=/etc/mkube-agent.env\nExecStart=/usr/local/bin/mkube-agent\nWorkingDirectory=/var/data\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"

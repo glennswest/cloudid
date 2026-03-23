@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-23
+- **feat:** runner template: install iscsi-initiator-utils and liburing via rpm-ostree on first boot (needed by stormd for iSCSI targets and async I/O)
+
 ### 2026-03-22
 - **fix:** agent-runner template pulls wrong architecture — added `--arch amd64` to all podman pull/run commands so x86_64 job runners don't pull ARM64 images
 - **fix:** agent-runner: use host podman via socket instead of nested podman — mount `/run/podman/podman.sock`, enable `podman.socket`, set `CONTAINER_HOST` env var, remove nested storage and fuse workarounds
