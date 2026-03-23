@@ -4,6 +4,7 @@
 
 ### 2026-03-22
 - **fix:** agent-runner template pulls wrong architecture — added `--arch amd64` to all podman pull/run commands so x86_64 job runners don't pull ARM64 images
+- **fix:** agent-runner: load fuse kernel module before starting mkube-agent — nested podman needs fuse-overlayfs which requires `/dev/fuse`
 
 ### 2026-03-21
 - **fix:** agent-runner template now partitions and mounts /dev/sda as /var/data (XFS) — was using ephemeral tmpfs, disk sat unused
