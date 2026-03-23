@@ -37,6 +37,13 @@
         "contents": {
           "source": "data:,%5B%5Bregistry%5D%5D%0Alocation%20%3D%20%22registry.gt.lo%3A5000%22%0Ainsecure%20%3D%20true%0A"
         }
+      },
+      {
+        "path": "/etc/modules-load.d/fuse.conf",
+        "mode": 420,
+        "contents": {
+          "source": "data:,fuse%0A"
+        }
       }
     ]
   },
