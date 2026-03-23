@@ -46,7 +46,7 @@ htop
 
 %post --log=/root/ks-post.log
 # Harden SSH
-sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
 sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 
 # Enable SSH key access for root (keys injected by CloudID merge)
