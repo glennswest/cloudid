@@ -6,6 +6,7 @@
 - **feat:** agent-runner-install ignition template — installs FCOS to /dev/sda with coreos-installer, then reboots into installed system with full agent-runner config (mkube-agent, registry, fuse, podman socket)
 - **fix:** agent-runner and agent-runner-install: persistent container storage (`/var/data/agent-storage` bind to `/var/lib/containers`), persistent tmp (`/var/data/tmp`), removed pre-pull of rawhidedev/fedoradev images that blocked heartbeats for 10+ minutes
 - **fix:** agent-runner-install: deduplicate SSH keys from cloudid metadata API — Ignition v3.4.0 rejects duplicate entries in `sshAuthorizedKeys`, and cloudid returns the same key under multiple indices (core, root)
+- **feat:** agent-runner and agent-runner-install: load `ublk_drv` kernel module at boot (`/etc/modules-load.d/ublk.conf`) — io_uring is built-in (`CONFIG_IO_URING=y`), ublk is a module (`CONFIG_BLK_DEV_UBLK=m`)
 
 ### 2026-03-23
 - **feat:** Fedora Rawhide kickstart template for server2 — network install, SSH hardened, keys from CloudID

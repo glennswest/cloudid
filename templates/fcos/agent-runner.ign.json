@@ -44,6 +44,13 @@
         "contents": {
           "source": "data:,fuse%0A"
         }
+      },
+      {
+        "path": "/etc/modules-load.d/ublk.conf",
+        "mode": 420,
+        "contents": {
+          "source": "data:,ublk_drv%0A"
+        }
       }
     ]
   },
