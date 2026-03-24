@@ -58,6 +58,13 @@
         "contents": {
           "source": "data:,iscsi_tcp%0Aiscsi_target_mod%0Atarget_core_mod%0A"
         }
+      },
+      {
+        "path": "/etc/NetworkManager/system-connections/enp5s0.nmconnection",
+        "mode": 384,
+        "contents": {
+          "source": "data:,%5Bconnection%5D%0Aid%3Denp5s0%0Ainterface-name%3Denp5s0%0Atype%3Dethernet%0A%0A%5Bipv4%5D%0Amethod%3Dauto%0Anever-default%3Dtrue%0A%0A%5Bipv6%5D%0Amethod%3Dauto%0A"
+        }
       }
     ]
   },

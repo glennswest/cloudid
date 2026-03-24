@@ -8,6 +8,7 @@
 - **fix:** agent-runner-install: deduplicate SSH keys from cloudid metadata API — Ignition v3.4.0 rejects duplicate entries in `sshAuthorizedKeys`, and cloudid returns the same key under multiple indices (core, root)
 - **feat:** agent-runner and agent-runner-install: load `ublk_drv` kernel module at boot (`/etc/modules-load.d/ublk.conf`) — io_uring is built-in (`CONFIG_IO_URING=y`), ublk is a module (`CONFIG_BLK_DEV_UBLK=m`)
 - **feat:** agent-runner and agent-runner-install: load iSCSI modules at boot (`/etc/modules-load.d/iscsi.conf`) — `iscsi_tcp` (initiator), `iscsi_target_mod` + `target_core_mod` (target)
+- **fix:** agent-runner and agent-runner-install: set `never-default=true` on enp5s0 NIC — prevents second NIC's default route from causing asymmetric routing (traffic in on enp3s0/192.168.10.10, out on enp5s0/192.168.10.20)
 
 ### 2026-03-23
 - **feat:** Fedora Rawhide kickstart template for server2 — network install, SSH hardened, keys from CloudID
