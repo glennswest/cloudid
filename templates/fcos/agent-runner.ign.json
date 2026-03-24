@@ -62,8 +62,9 @@
       {
         "path": "/etc/NetworkManager/system-connections/enp5s0.nmconnection",
         "mode": 384,
+        "overwrite": true,
         "contents": {
-          "source": "data:,%5Bconnection%5D%0Aid%3Denp5s0%0Ainterface-name%3Denp5s0%0Atype%3Dethernet%0A%0A%5Bipv4%5D%0Amethod%3Dauto%0Anever-default%3Dtrue%0A%0A%5Bipv6%5D%0Amethod%3Dauto%0A"
+          "source": "data:;base64,W2Nvbm5lY3Rpb25dCmlkPWVucDVzMAppbnRlcmZhY2UtbmFtZT1lbnA1czAKdHlwZT1ldGhlcm5ldAoKW2lwdjRdCm1ldGhvZD1hdXRvCm5ldmVyLWRlZmF1bHQ9dHJ1ZQoKW2lwdjZdCm1ldGhvZD1hdXRvCg=="
         }
       }
     ]
