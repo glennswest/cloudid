@@ -4,6 +4,7 @@
 
 ### 2026-03-24
 - **feat:** agent-runner-install ignition template — installs FCOS to /dev/sda with coreos-installer, then reboots into installed system with full agent-runner config (mkube-agent, registry, fuse, podman socket)
+- **fix:** agent-runner and agent-runner-install: persistent container storage (`/var/data/agent-storage` bind to `/var/lib/containers`), persistent tmp (`/var/data/tmp`), removed pre-pull of rawhidedev/fedoradev images that blocked heartbeats for 10+ minutes
 
 ### 2026-03-23
 - **feat:** Fedora Rawhide kickstart template for server2 — network install, SSH hardened, keys from CloudID
