@@ -4,7 +4,7 @@
     "disks": [
       {
         "device": "/dev/sda",
-        "wipeTable": false,
+        "wipeTable": true,
         "partitions": [
           {
             "label": "data",
@@ -19,7 +19,7 @@
         "format": "xfs",
         "path": "/var/data",
         "label": "data",
-        "wipeFilesystem": false
+        "wipeFilesystem": true
       }
     ],
     "files": [
