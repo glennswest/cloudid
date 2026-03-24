@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-24
+- **feat:** agent-runner-install ignition template — installs FCOS to /dev/sda with coreos-installer, then reboots into installed system with full agent-runner config (mkube-agent, registry, fuse, podman socket)
+
 ### 2026-03-23
 - **feat:** Fedora Rawhide kickstart template for server2 — network install, SSH hardened, keys from CloudID
 - **feat:** runner template: install iscsi-initiator-utils and liburing via rpm-ostree on first boot (needed by stormd for iSCSI targets and async I/O)
