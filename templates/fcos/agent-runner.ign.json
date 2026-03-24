@@ -51,6 +51,13 @@
         "contents": {
           "source": "data:,ublk_drv%0A"
         }
+      },
+      {
+        "path": "/etc/modules-load.d/iscsi.conf",
+        "mode": 420,
+        "contents": {
+          "source": "data:,iscsi_tcp%0Aiscsi_target_mod%0Atarget_core_mod%0A"
+        }
       }
     ]
   },
