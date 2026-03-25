@@ -235,11 +235,10 @@ pub struct K8sContainerStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct K8sPodStatus {
-    #[serde(default)]
+    #[serde(default, alias = "podIp", rename = "podIP")]
     pub pod_ip: String,
-    #[serde(default)]
+    #[serde(default, alias = "container_statuses", rename = "containerStatuses")]
     pub container_statuses: Vec<K8sContainerStatus>,
 }
 
