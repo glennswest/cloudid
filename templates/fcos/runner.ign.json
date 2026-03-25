@@ -24,6 +24,13 @@
         "wipeFilesystem": true
       }
     ],
+    "links": [
+      {
+        "path": "/etc/localtime",
+        "target": "/usr/share/zoneinfo/America/Chicago",
+        "overwrite": true
+      }
+    ],
     "files": [
       {
         "path": "/etc/hostname",
