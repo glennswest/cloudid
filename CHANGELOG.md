@@ -5,6 +5,7 @@
 ### 2026-03-25
 - **feat:** container identity now provisions root + owner username instead of hardcoded "admin" — containers get SSH keys for both root and the namespace owner's username (e.g. root + gwest)
 - **fix:** container watcher pod IP deserialization — `podIP` (Kubernetes) vs `podIp` (camelCase) mismatch caused all pod IPs to deserialize as empty, resulting in container_ips=0
+- **feat:** add `/api/v1/debug/state` diagnostic endpoint — dumps container IPs, namespace owners, BMH mappings, identity state, and cache entries
 
 ### 2026-03-24
 - **feat:** set timezone to America/Chicago in all ignition templates via `/etc/localtime` symlink — affects agent-runner, agent-runner-install (inner ignition), runner, nextnfs, nfs-server

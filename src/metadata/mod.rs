@@ -178,6 +178,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             delete(handlers::oneshot_delete),
         )
         .route("/health", get(handlers::health))
+        .route("/api/v1/debug/state", get(handlers::debug_state))
         .layer(middleware::from_fn(access_log))
         .with_state(state)
 }

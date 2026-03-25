@@ -430,6 +430,75 @@ pub async fn health() -> impl IntoResponse {
     (StatusCode::OK, "ok")
 }
 
+/// GET /api/v1/debug/state — dump container watcher state, BMH state, and cache stats.
+pub async fn debug_state(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let containers = state.containers.read().await;
+    let bmh = state.bmh.read().await;
+    let identity = state.identity.read().await;
+
+    let container_ips: Vec<serde_json::Value> = containers
+        .ip_to_container
+        .iter()
+        .map(|(ip, info)| {
+            serde_json::json!({
+                "ip": ip.to_string(),
+                "namespace": info.namespace,
+                "pod": info.pod_name,
+                "container": info.container_name,
+                "hostname": info.hostname,
+            })
+        })
+        .collect();
+
+    let ns_owners: serde_json::Map<String, serde_json::Value> = containers
+        .namespace_owners
+        .iter()
+        .map(|(ns, owner)| (ns.clone(), serde_json::Value::String(owner.clone())))
+        .collect();
+
+    let bmh_ips: Vec<serde_json::Value> = bmh
+        .ip_to_hostname
+        .iter()
+        .map(|(ip, hostname)| {
+            serde_json::json!({ "ip": ip.to_string(), "hostname": hostname })
+        })
+        .collect();
+
+    let cache_entries: Vec<serde_json::Value> = state
+        .metadata_cache
+        .iter()
+        .map(|entry| {
+            let ip = entry.key();
+            let meta = entry.value();
+            serde_json::json!({
+                "ip": ip.to_string(),
+                "instance_id": meta.instance_id,
+                "hostname": meta.hostname,
+                "public_keys": meta.public_keys.iter().map(|pk| {
+                    serde_json::json!({
+                        "ssh_user": pk.ssh_user,
+                        "key_count": pk.keys.len(),
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+
+    Json(serde_json::json!({
+        "container_ips": container_ips,
+        "container_ip_count": container_ips.len(),
+        "namespace_owners": ns_owners,
+        "bmh_ips": bmh_ips,
+        "bmh_ip_count": bmh_ips.len(),
+        "identity_users": identity.users.keys().collect::<Vec<_>>(),
+        "identity_host_access_rules": identity.host_access.keys().collect::<Vec<_>>(),
+        "cache_entries": cache_entries,
+        "cache_entry_count": cache_entries.len(),
+    }))
+}
+
 fn lookup_or_404(
     state: &AppState,
     ip: &std::net::IpAddr,
