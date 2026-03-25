@@ -130,7 +130,7 @@ pub fn resolve_host(
 
 /// Resolve metadata for a container based on namespace ownership.
 ///
-/// Direct mapping: namespace owner -> SSH keys for "admin" user.
+/// Direct mapping: namespace owner -> SSH keys for root + owner username.
 /// No HostAccess rule matching — the namespace owner IS the identity.
 pub fn resolve_container(
     ip: IpAddr,
@@ -159,21 +159,38 @@ pub fn resolve_container(
         return None;
     }
 
-    let public_keys = vec![PublicKeyEntry {
-        ssh_user: "admin".to_string(),
+    // Provision keys for both root and the owner's username
+    let mut public_keys = vec![PublicKeyEntry {
+        ssh_user: "root".to_string(),
         keys: user_keys.clone(),
     }];
+    if owner != "root" {
+        public_keys.push(PublicKeyEntry {
+            ssh_user: owner.to_string(),
+            keys: user_keys.clone(),
+        });
+    }
 
-    let cloud_config = CloudConfig {
-        users: vec![CloudConfigUser {
-            name: "admin".to_string(),
+    let mut users = vec![CloudConfigUser {
+        name: "root".to_string(),
+        uid: "0".to_string(),
+        groups: vec![],
+        shell: "/bin/bash".to_string(),
+        sudo: Some("ALL=(ALL) NOPASSWD:ALL".to_string()),
+        ssh_authorized_keys: user_keys.clone(),
+    }];
+    if owner != "root" {
+        users.push(CloudConfigUser {
+            name: owner.to_string(),
             uid: user_res.spec.uid.to_string(),
-            groups: vec!["wheel".to_string()],
+            groups: user_res.spec.groups.clone(),
             shell: user_res.spec.shell.clone(),
             sudo: Some("ALL=(ALL) NOPASSWD:ALL".to_string()),
             ssh_authorized_keys: user_keys,
-        }],
-    };
+        });
+    }
+
+    let cloud_config = CloudConfig { users };
 
     let user_data = format!(
         "#cloud-config\n{}",
@@ -465,12 +482,15 @@ mod tests {
         assert_eq!(meta.instance_id, "gt/stormd");
         assert_eq!(meta.hostname, "main.stormd.gt.lo");
         assert_eq!(meta.local_ipv4, "192.168.200.50");
-        assert_eq!(meta.public_keys.len(), 1);
-        assert_eq!(meta.public_keys[0].ssh_user, "admin");
+        assert_eq!(meta.public_keys.len(), 2);
+        assert_eq!(meta.public_keys[0].ssh_user, "root");
+        assert_eq!(meta.public_keys[1].ssh_user, "gwest");
         assert!(meta.public_keys[0].keys[0].contains("AAAA_TEST_KEY"));
-        assert_eq!(meta.cloud_config.users.len(), 1);
-        assert_eq!(meta.cloud_config.users[0].name, "admin");
-        assert!(meta.cloud_config.users[0].groups.contains(&"wheel".to_string()));
+        assert!(meta.public_keys[1].keys[0].contains("AAAA_TEST_KEY"));
+        assert_eq!(meta.cloud_config.users.len(), 2);
+        assert_eq!(meta.cloud_config.users[0].name, "root");
+        assert_eq!(meta.cloud_config.users[1].name, "gwest");
+        assert!(meta.cloud_config.users[1].groups.contains(&"wheel".to_string()));
     }
 
     #[test]

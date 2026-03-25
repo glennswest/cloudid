@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-25
+- **feat:** container identity now provisions root + owner username instead of hardcoded "admin" — containers get SSH keys for both root and the namespace owner's username (e.g. root + gwest)
+
 ### 2026-03-24
 - **feat:** set timezone to America/Chicago in all ignition templates via `/etc/localtime` symlink — affects agent-runner, agent-runner-install (inner ignition), runner, nextnfs, nfs-server
 - **feat:** agent-runner-install ignition template — installs FCOS to /dev/sda with coreos-installer, then reboots into installed system with full agent-runner config (mkube-agent, registry, fuse, podman socket)
