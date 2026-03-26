@@ -67,6 +67,37 @@
         "contents": {
           "source": "data:,%5B%5Bregistry%5D%5D%0Alocation%20%3D%20%22registry.gt.lo%3A5000%22%0Ainsecure%20%3D%20true%0A"
         }
+      },
+      {
+        "path": "/etc/modules-load.d/bonding.conf",
+        "mode": 420,
+        "contents": {
+          "source": "data:,bonding%0A"
+        }
+      },
+      {
+        "path": "/etc/NetworkManager/system-connections/bond0.nmconnection",
+        "mode": 384,
+        "overwrite": true,
+        "contents": {
+          "source": "data:;base64,W2Nvbm5lY3Rpb25dCmlkPWJvbmQwCnR5cGU9Ym9uZAppbnRlcmZhY2UtbmFtZT1ib25kMAoKW2JvbmRdCm1vZGU9ODAyLjNhZAptaWltb249MTAwCmxhY3BfcmF0ZT1mYXN0CnhtaXRfaGFzaF9wb2xpY3k9bGF5ZXIzKzQKCltpcHY0XQptZXRob2Q9YXV0bwoKW2lwdjZdCm1ldGhvZD1hdXRvCg=="
+        }
+      },
+      {
+        "path": "/etc/NetworkManager/system-connections/bond0-port-enp3s0.nmconnection",
+        "mode": 384,
+        "overwrite": true,
+        "contents": {
+          "source": "data:;base64,W2Nvbm5lY3Rpb25dCmlkPWJvbmQwLXBvcnQtZW5wM3MwCnR5cGU9ZXRoZXJuZXQKaW50ZXJmYWNlLW5hbWU9ZW5wM3MwCm1hc3Rlcj1ib25kMApzbGF2ZS10eXBlPWJvbmQK"
+        }
+      },
+      {
+        "path": "/etc/NetworkManager/system-connections/bond0-port-enp5s0.nmconnection",
+        "mode": 384,
+        "overwrite": true,
+        "contents": {
+          "source": "data:;base64,W2Nvbm5lY3Rpb25dCmlkPWJvbmQwLXBvcnQtZW5wNXMwCnR5cGU9ZXRoZXJuZXQKaW50ZXJmYWNlLW5hbWU9ZW5wNXMwCm1hc3Rlcj1ib25kMApzbGF2ZS10eXBlPWJvbmQK"
+        }
       }
     ]
   },
