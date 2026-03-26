@@ -55,6 +55,13 @@
         }
       },
       {
+        "path": "/etc/modules-load.d/ublk.conf",
+        "mode": 420,
+        "contents": {
+          "source": "data:,ublk_drv%0A"
+        }
+      },
+      {
         "path": "/etc/containers/registries.conf.d/registry-gt-lo.conf",
         "mode": 420,
         "contents": {

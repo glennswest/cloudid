@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-26
+- **feat:** runner template: load `ublk_drv` kernel module at boot (`/etc/modules-load.d/ublk.conf`) — privileged containers can use `/dev/ublk-control` directly when module is loaded on host
+
 ### 2026-03-25
 - **feat:** container identity now provisions root + owner username instead of hardcoded "admin" — containers get SSH keys for both root and the namespace owner's username (e.g. root + gwest)
 - **fix:** container watcher pod IP deserialization — `podIP` (Kubernetes) vs `podIp` (camelCase) mismatch caused all pod IPs to deserialize as empty, resulting in container_ips=0
