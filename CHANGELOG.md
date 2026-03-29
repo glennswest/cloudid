@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-29
+- **fix:** container metadata returns owner username before root in public-keys index — consumers that match on first hit (e.g. rust4git SSH) now resolve the named user instead of "root"
+
 ### 2026-03-26
 - **feat:** LACP bonding (802.3ad) across both NICs (enp3s0 + enp5s0) in all runner templates — bond0 with fast LACP rate, layer3+4 hash policy, DHCP on bond interface; replaces standalone enp5s0 config; bonding kernel module loaded at boot; updated agent-runner, agent-runner-install (inner ignition), and runner templates
 - **feat:** runner template: load `ublk_drv` kernel module at boot (`/etc/modules-load.d/ublk.conf`) — privileged containers can use `/dev/ublk-control` directly when module is loaded on host
