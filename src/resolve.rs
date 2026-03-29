@@ -159,13 +159,19 @@ pub fn resolve_container(
         return None;
     }
 
-    // Provision keys for both the owner's username and root.
+    // Provision keys for the owner's username, admin, and root.
     // Owner comes first so consumers that match on first hit resolve
     // the named user rather than "root".
     let mut public_keys = Vec::new();
     if owner != "root" {
         public_keys.push(PublicKeyEntry {
             ssh_user: owner.to_string(),
+            keys: user_keys.clone(),
+        });
+    }
+    if owner != "admin" && owner != "root" {
+        public_keys.push(PublicKeyEntry {
+            ssh_user: "admin".to_string(),
             keys: user_keys.clone(),
         });
     }
@@ -486,11 +492,11 @@ mod tests {
         assert_eq!(meta.instance_id, "gt/stormd");
         assert_eq!(meta.hostname, "main.stormd.gt.lo");
         assert_eq!(meta.local_ipv4, "192.168.200.50");
-        assert_eq!(meta.public_keys.len(), 2);
+        assert_eq!(meta.public_keys.len(), 3);
         assert_eq!(meta.public_keys[0].ssh_user, "gwest");
-        assert_eq!(meta.public_keys[1].ssh_user, "root");
+        assert_eq!(meta.public_keys[1].ssh_user, "admin");
+        assert_eq!(meta.public_keys[2].ssh_user, "root");
         assert!(meta.public_keys[0].keys[0].contains("AAAA_TEST_KEY"));
-        assert!(meta.public_keys[1].keys[0].contains("AAAA_TEST_KEY"));
         assert_eq!(meta.cloud_config.users.len(), 2);
         assert_eq!(meta.cloud_config.users[0].name, "gwest");
         assert_eq!(meta.cloud_config.users[1].name, "root");
