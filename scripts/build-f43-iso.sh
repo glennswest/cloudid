@@ -115,9 +115,10 @@ for grubcfg in $(find "$EXTRACT" -name 'grub.cfg' 2>/dev/null); do
     # Auto-install: timeout 0, first entry
     sed -i 's/^set timeout=.*/set timeout=0/' "$grubcfg"
     sed -i 's/^set default=.*/set default="0"/' "$grubcfg"
-    # Keep original inst.stage2=hd:LABEL but add iBFT + network + kickstart
-    # rd.iscsi.firmware tells dracut to reconnect iSCSI via iBFT (detected in boot log)
-    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| rd.iscsi.firmware ip=dhcp inst.ks='"${CLOUDID_KS}"' earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
+    # Keep original inst.stage2=hd:LABEL but add inst.repo (same label), iBFT, kickstart
+    # rd.iscsi.firmware tells dracut to reconnect iSCSI via iBFT
+    # inst.repo=hd:LABEL= tells Anaconda where to find packages (iSCSI disk is /dev/sdX not /dev/sr0)
+    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| rd.iscsi.firmware ip=dhcp inst.repo=hd:LABEL='"${ORIG_VOLID}"' inst.ks='"${CLOUDID_KS}"' earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
     # Remove media check and quiet
     sed -i 's/ rd.live.check//g' "$grubcfg"
     sed -i 's/ quiet//g' "$grubcfg"
