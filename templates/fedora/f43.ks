@@ -4,8 +4,7 @@
 # iSCSI CDROM boot: iPXE SAN boots from iSCSI target, kernel reuses connection
 # Kernel params: rd.iscsi.firmware ip=ibft inst.ks=cdrom:/ks.cfg
 
-# Install from boot media (iSCSI CDROM handed off from iPXE)
-cdrom
+# Install source set via kernel param: inst.repo=hd:LABEL=<volid>
 
 # System config
 lang en_US.UTF-8

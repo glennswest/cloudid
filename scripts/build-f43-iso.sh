@@ -119,8 +119,8 @@ for grubcfg in $(find "$EXTRACT" -name 'grub.cfg' 2>/dev/null); do
     sed -i 's/^set default=.*/set default="0"/' "$grubcfg"
     # rd.iscsi.firmware + ip=ibft: hand off iSCSI CDROM connection from iPXE to kernel
     # Keep original inst.stage2=hd:LABEL=... — label lookup finds the boot device
-    # inst.ks=cdrom:/ks.cfg: kickstart embedded in ISO
-    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| rd.iscsi.firmware ip=ibft inst.ks=cdrom:/ks.cfg earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
+    # Use same LABEL for kickstart and repo (cdrom: prefix waits for /dev/sr* which doesn't exist)
+    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| rd.iscsi.firmware ip=ibft inst.ks=hd:LABEL='"$ORIG_VOLID"':/ks.cfg inst.repo=hd:LABEL='"$ORIG_VOLID"' earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
     # Remove media check and quiet
     sed -i 's/ rd.live.check//g' "$grubcfg"
     sed -i 's/ quiet//g' "$grubcfg"
