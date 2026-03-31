@@ -4,8 +4,8 @@
 # Boot host from Fedora 43 ISO, pass kernel parameter:
 #   inst.ks=http://192.168.200.20:8090/config/kickstart
 
-# Install from Fedora 43 network repos
-url --mirrorlist=https://mirrors.fedoraproject.org/mirrorlist?repo=fedora-43&arch=x86_64
+# Install from ISO media (packages embedded in DVD)
+cdrom
 
 # System config
 lang en_US.UTF-8
