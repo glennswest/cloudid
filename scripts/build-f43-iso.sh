@@ -117,9 +117,13 @@ for grubcfg in $(find "$EXTRACT" -name 'grub.cfg' 2>/dev/null); do
     # Auto-install: timeout 0, first entry
     sed -i 's/^set timeout=.*/set timeout=0/' "$grubcfg"
     sed -i 's/^set default=.*/set default="0"/' "$grubcfg"
-    # rd.iscsi.firmware + ip=dhcp: dracut reconnects iSCSI target after iPXE handoff
-    # inst.ks=cdrom:/ks.cfg: kickstart embedded in ISO
-    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| rd.iscsi.firmware ip=dhcp inst.ks=cdrom:/ks.cfg earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
+    # iSCSI ISO appears as /dev/sdb (SCSI disk), not /dev/sr0 (CD-ROM)
+    # Replace original inst.stage2=hd:LABEL=... with direct device reference
+    sed -i 's|inst.stage2=hd:LABEL=[^ ]*|inst.stage2=hd:/dev/sdb|g' "$grubcfg"
+    # ip=ibft: preserve iPXE iSCSI session via iBFT (matching working FCOS config)
+    # rd.iscsi.firmware: dracut reconnects to iSCSI target after iPXE handoff
+    # inst.ks=hd:/dev/sdb:/ks.cfg: kickstart on iSCSI disk (not cdrom)
+    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| rd.iscsi.firmware ip=ibft inst.ks=hd:/dev/sdb:/ks.cfg earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
     # Remove media check and quiet
     sed -i 's/ rd.live.check//g' "$grubcfg"
     sed -i 's/ quiet//g' "$grubcfg"

@@ -1,11 +1,11 @@
 # Fedora 43 Kickstart — ISO install
 # CloudID template: SSH keys merged automatically
 #
-# Boot host from Fedora 43 ISO, pass kernel parameter:
-#   inst.ks=http://192.168.200.20:8090/config/kickstart
+# iSCSI CDROM boot: ISO appears as /dev/sdb (SCSI disk via LIO IBLOCK)
+# Kernel params: rd.iscsi.firmware ip=ibft inst.stage2=hd:/dev/sdb inst.ks=hd:/dev/sdb:/ks.cfg
 
-# Install from ISO media (packages embedded in DVD)
-cdrom
+# Install from iSCSI disk (ISO appears as /dev/sdb, not /dev/sr0)
+harddrive --partition=/dev/sdb --dir=/
 
 # System config
 lang en_US.UTF-8
