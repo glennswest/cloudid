@@ -31,37 +31,25 @@ PKGDIR="$WORK/Packages"
 rm -rf "$PKGDIR"
 mkdir -p "$PKGDIR"
 
-# Package list — matches the CloudID kickstart template
-GROUPS="@core @standard"
-PACKAGES="openssh-server openssh-clients chrony vim-enhanced tmux git rsync htop curl wget jq bash-completion podman buildah bind-utils iproute iputils"
+# Use dnf install --downloadonly with a temporary installroot
+# This properly resolves @groups (mandatory + default packages) and all dependencies
+INSTALLROOT="$WORK/installroot"
+rm -rf "$INSTALLROOT"
+mkdir -p "$INSTALLROOT"
 
-echo "Groups: $GROUPS"
-echo "Packages: $PACKAGES"
-
-# Resolve @groups to package names
-F43_REPO_OPTS="--repofrompath=f43,$F43_REPO --repo=f43 --releasever=43"
-GROUP_PKGS=""
-for grp in $GROUPS; do
-    grpname="${grp#@}"
-    echo "=== Resolving group: $grpname ==="
-    resolved=$(dnf $F43_REPO_OPTS group info "$grpname" 2>/dev/null \
-        | grep -E '^ ' | sed 's/^ *//' | cut -d' ' -f1 || true)
-    GROUP_PKGS="$GROUP_PKGS $resolved"
-done
-
-ALL_PKGS="$GROUP_PKGS $PACKAGES"
-echo "=== Total packages to download ==="
-echo "$ALL_PKGS" | tr ' ' '\n' | grep -v '^$' | wc -l
-
-# Download all packages + dependencies
-dnf download --resolve --alldeps \
-    --destdir="$PKGDIR" \
+echo "=== Installing to temporary root (download all RPMs) ==="
+dnf install -y --downloadonly --downloaddir="$PKGDIR" \
+    --installroot="$INSTALLROOT" \
     --repofrompath=f43,"$F43_REPO" \
     --repo=f43 \
     --releasever=43 \
     --forcearch=x86_64 \
     --skip-unavailable \
-    $ALL_PKGS
+    @core @standard \
+    openssh-server openssh-clients chrony vim-enhanced tmux git rsync htop \
+    curl wget jq bash-completion podman buildah bind-utils iproute iputils
+
+rm -rf "$INSTALLROOT"
 
 echo "=== Downloaded $(ls "$PKGDIR"/*.rpm 2>/dev/null | wc -l) RPMs ==="
 du -sh "$PKGDIR"
