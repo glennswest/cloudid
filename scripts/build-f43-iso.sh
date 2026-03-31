@@ -31,25 +31,41 @@ PKGDIR="$WORK/Packages"
 rm -rf "$PKGDIR"
 mkdir -p "$PKGDIR"
 
-# Use dnf install --downloadonly with a temporary installroot
-# This properly resolves @groups (mandatory + default packages) and all dependencies
-INSTALLROOT="$WORK/installroot"
-rm -rf "$INSTALLROOT"
-mkdir -p "$INSTALLROOT"
+F43_REPO_OPTS="--repofrompath=f43,$F43_REPO --repo=f43 --releasever=43"
 
-echo "=== Installing to temporary root (download all RPMs) ==="
-dnf install -y --downloadonly --downloaddir="$PKGDIR" \
-    --installroot="$INSTALLROOT" \
+# Resolve group members to package names using dnf repoquery
+echo "=== Resolving @core and @standard group packages ==="
+GROUP_PKGS=""
+for grpname in core standard; do
+    echo "--- Resolving group: $grpname ---"
+    # List mandatory + default packages for the group
+    pkgs=$(dnf $F43_REPO_OPTS repoquery --arch=x86_64,noarch \
+        --queryformat='%{name}' --groupmember "$grpname" 2>/dev/null \
+        | sort -u || true)
+    if [ -z "$pkgs" ]; then
+        # Fallback: parse dnf group info output
+        echo "repoquery --groupmember failed, trying group info parsing"
+        pkgs=$(dnf $F43_REPO_OPTS group info "$grpname" 2>/dev/null \
+            | awk '/^ /{print $1}' || true)
+    fi
+    GROUP_PKGS="$GROUP_PKGS $pkgs"
+    echo "Resolved $(echo "$pkgs" | wc -w) packages from $grpname"
+done
+
+EXTRA_PKGS="openssh-server openssh-clients chrony vim-enhanced tmux git rsync htop curl wget jq bash-completion podman buildah bind-utils iproute iputils"
+ALL_PKGS="$GROUP_PKGS $EXTRA_PKGS"
+UNIQ_COUNT=$(echo "$ALL_PKGS" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
+echo "=== Total unique packages to download: $UNIQ_COUNT ==="
+
+# Download all packages + full dependency tree
+dnf download --resolve --alldeps \
+    --destdir="$PKGDIR" \
     --repofrompath=f43,"$F43_REPO" \
     --repo=f43 \
     --releasever=43 \
     --forcearch=x86_64 \
     --skip-unavailable \
-    @core @standard \
-    openssh-server openssh-clients chrony vim-enhanced tmux git rsync htop \
-    curl wget jq bash-completion podman buildah bind-utils iproute iputils
-
-rm -rf "$INSTALLROOT"
+    $ALL_PKGS
 
 echo "=== Downloaded $(ls "$PKGDIR"/*.rpm 2>/dev/null | wc -l) RPMs ==="
 du -sh "$PKGDIR"
