@@ -31,41 +31,34 @@ PKGDIR="$WORK/Packages"
 rm -rf "$PKGDIR"
 mkdir -p "$PKGDIR"
 
-F43_REPO_OPTS="--repofrompath=f43,$F43_REPO --repo=f43 --releasever=43"
-
-# Resolve group members to package names using dnf repoquery
-echo "=== Resolving @core and @standard group packages ==="
-GROUP_PKGS=""
-for grpname in core standard; do
-    echo "--- Resolving group: $grpname ---"
-    # List mandatory + default packages for the group
-    pkgs=$(dnf $F43_REPO_OPTS repoquery --arch=x86_64,noarch \
-        --queryformat='%{name}' --groupmember "$grpname" 2>/dev/null \
-        | sort -u || true)
-    if [ -z "$pkgs" ]; then
-        # Fallback: parse dnf group info output
-        echo "repoquery --groupmember failed, trying group info parsing"
-        pkgs=$(dnf $F43_REPO_OPTS group info "$grpname" 2>/dev/null \
-            | awk '/^ /{print $1}' || true)
-    fi
-    GROUP_PKGS="$GROUP_PKGS $pkgs"
-    echo "Resolved $(echo "$pkgs" | wc -w) packages from $grpname"
-done
+# Use dnf install --downloadonly with a temporary installroot.
+# This is the only reliable way to resolve @group packages on dnf5 —
+# it uses the full dependency solver with proper group expansion.
+INSTALLROOT="$WORK/installroot"
+rm -rf "$INSTALLROOT"
 
 EXTRA_PKGS="openssh-server openssh-clients chrony vim-enhanced tmux git rsync htop curl wget jq bash-completion podman buildah bind-utils iproute iputils"
-ALL_PKGS="$GROUP_PKGS $EXTRA_PKGS"
-UNIQ_COUNT=$(echo "$ALL_PKGS" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
-echo "=== Total unique packages to download: $UNIQ_COUNT ==="
 
-# Download all packages + full dependency tree
-dnf download --resolve --alldeps \
-    --destdir="$PKGDIR" \
+echo "=== Resolving and downloading all packages via installroot ==="
+dnf install -y --downloadonly \
+    --installroot="$INSTALLROOT" \
     --repofrompath=f43,"$F43_REPO" \
     --repo=f43 \
     --releasever=43 \
-    --forcearch=x86_64 \
-    --skip-unavailable \
-    $ALL_PKGS
+    --setopt=keepcache=1 \
+    @core @standard $EXTRA_PKGS
+
+# Collect all downloaded RPMs from the dnf cache inside installroot
+echo "=== Collecting RPMs from installroot cache ==="
+find "$INSTALLROOT" -name '*.rpm' -exec cp {} "$PKGDIR/" \;
+
+# If installroot cache was empty, check host cache as fallback
+if [ "$(ls "$PKGDIR"/*.rpm 2>/dev/null | wc -l)" -eq 0 ]; then
+    echo "WARNING: No RPMs in installroot cache, checking host cache"
+    find /var/cache/libdnf5 /var/cache/dnf -name '*.rpm' 2>/dev/null -exec cp {} "$PKGDIR/" \;
+fi
+
+rm -rf "$INSTALLROOT"
 
 echo "=== Downloaded $(ls "$PKGDIR"/*.rpm 2>/dev/null | wc -l) RPMs ==="
 du -sh "$PKGDIR"
