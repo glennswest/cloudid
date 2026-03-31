@@ -197,6 +197,8 @@ for grubcfg in $(find "$EXTRACT" -name 'grub.cfg' 2>/dev/null); do
     # Auto-install: timeout 0, first entry
     sed -i 's/^set timeout=.*/set timeout=0/' "$grubcfg"
     sed -i 's/^set default=.*/set default="0"/' "$grubcfg"
+    # Replace label-based stage2 with cdrom (iSCSI CDROM has no label visible to dracut)
+    sed -i 's|inst.stage2=hd:LABEL=[^ ]*|inst.stage2=cdrom|g' "$grubcfg"
     # Add kickstart + console to kernel lines
     sed -i '/^\s*linux\|^\s*linuxefi/ s|$| inst.ks=cdrom:/ks.cfg earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
     # Remove media check
