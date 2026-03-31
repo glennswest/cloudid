@@ -6,6 +6,11 @@
 
 # Install source set via kernel param: inst.repo=hd:LABEL=<volid>
 
+# Disable online repos — boot.iso is netinstall, its repos point to mirrors.
+# All packages are on the ISO; no internet required.
+repo --name=fedora --baseurl=file:///run/install/repo --cost=1
+repo --name=fedora-updates --baseurl=file:///run/install/repo --cost=1
+
 # System config
 lang en_US.UTF-8
 keyboard us

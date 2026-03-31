@@ -105,6 +105,27 @@ cp /build/templates/fedora/f43.ks "$EXTRACT/ks.cfg"
 cp -a "$PKGDIR" "$EXTRACT/Packages"
 cp -a "$PKGDIR/repodata" "$EXTRACT/repodata"
 
+# Create .treeinfo so Anaconda recognizes this as a DVD install tree
+cat > "$EXTRACT/.treeinfo" << 'TREEEOF'
+[general]
+name = Fedora 43
+family = Fedora
+version = 43
+arch = x86_64
+platforms = x86_64
+
+[tree]
+arch = x86_64
+platforms = x86_64
+
+[variant-Everything]
+id = Everything
+name = Everything
+type = variant
+packages = Packages
+repository = .
+TREEEOF
+
 # Get original volume ID
 ORIG_VOLID=$(xorriso -indev "$WORK/boot.iso" -pvd_info 2>&1 | grep "Volume Id" | sed 's/.*: //' | tr -d "'" | xargs)
 echo "Original Volume ID: $ORIG_VOLID"
@@ -132,6 +153,7 @@ done
 # Build ISO using xorriso modify mode
 echo "=== Building final ISO with xorriso (modify mode) ==="
 MAP_ARGS="-map $EXTRACT/ks.cfg /ks.cfg"
+MAP_ARGS="$MAP_ARGS -map $EXTRACT/.treeinfo /.treeinfo"
 MAP_ARGS="$MAP_ARGS -map $EXTRACT/Packages /Packages"
 MAP_ARGS="$MAP_ARGS -map $EXTRACT/repodata /repodata"
 for grubcfg in $(find "$EXTRACT" -name 'grub.cfg' 2>/dev/null); do
