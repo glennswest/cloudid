@@ -14,8 +14,8 @@ timezone UTC --utc
 selinux --enforcing
 firewall --enabled --ssh
 
-# Network — LACP bonding (802.3ad) across both NICs, DHCP on bond0
-network --bondslaves=enp3s0,enp5s0 --bondopts=mode=802.3ad,miimon=100,lacp_rate=fast,xmit_hash_policy=layer3+4 --bootproto=dhcp --device=bond0 --activate --hostname={{HOSTNAME}}
+# Network — single NIC for installer, bonding configured in %post for installed system
+network --bootproto=dhcp --device=enp3s0 --activate --hostname={{HOSTNAME}}
 
 # Root password locked — SSH key access only
 rootpw --lock
@@ -70,6 +70,49 @@ set -ex
 
 # Load bonding kernel module at boot
 echo bonding > /etc/modules-load.d/bonding.conf
+
+# LACP bonding (802.3ad) across both NICs — applied to installed system
+cat > /etc/NetworkManager/system-connections/bond0.nmconnection << 'BONDEOF'
+[connection]
+id=bond0
+type=bond
+interface-name=bond0
+
+[bond]
+mode=802.3ad
+miimon=100
+lacp_rate=fast
+xmit_hash_policy=layer3+4
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto
+BONDEOF
+
+cat > /etc/NetworkManager/system-connections/bond0-port-enp3s0.nmconnection << 'PORT1EOF'
+[connection]
+id=bond0-port-enp3s0
+type=ethernet
+interface-name=enp3s0
+master=bond0
+slave-type=bond
+PORT1EOF
+
+cat > /etc/NetworkManager/system-connections/bond0-port-enp5s0.nmconnection << 'PORT2EOF'
+[connection]
+id=bond0-port-enp5s0
+type=ethernet
+interface-name=enp5s0
+master=bond0
+slave-type=bond
+PORT2EOF
+
+chmod 600 /etc/NetworkManager/system-connections/*.nmconnection
+
+# Remove installer-created single-NIC profile so bond takes over
+rm -f /etc/NetworkManager/system-connections/enp3s0.nmconnection 2>/dev/null || true
 
 # Harden SSH
 sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
