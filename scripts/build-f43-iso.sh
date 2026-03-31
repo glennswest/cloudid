@@ -18,7 +18,9 @@ mkdir -p "$WORK"
 # Download Fedora 43 boot.iso
 if [ ! -f "$WORK/boot.iso" ]; then
     echo "=== Downloading Fedora 43 boot.iso ==="
-    curl -L -o "$WORK/boot.iso" "$F43_URL"
+    rm -f "$WORK/boot.iso.partial"
+    curl -L --retry 3 --retry-delay 5 -o "$WORK/boot.iso.partial" "$F43_URL"
+    mv "$WORK/boot.iso.partial" "$WORK/boot.iso"
 else
     echo "=== Using cached boot.iso ==="
 fi
