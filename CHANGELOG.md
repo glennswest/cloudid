@@ -7,6 +7,8 @@
 - **fix:** iSCSI CDROM boot: replace `inst.stage2=hd:LABEL=` with network URL + `ip=dhcp` (dracut can't access iSCSI device after kernel handoff)
 - **fix:** merge_kickstart skips SSH key injection for non-root system users (e.g. `core`) that don't exist on standard Fedora — only injects for root and identity users
 - **fix:** DVD ISO repo metadata includes comps.xml group definitions — Anaconda needs these to resolve `@core` and `@standard` in kickstart `%packages`
+- **fix:** DVD ISO uses `dnf install --downloadonly --installroot` for complete group package resolution (696 RPMs vs 323 from fragile group info parsing)
+- **feat:** F43 kickstart: LACP bonding (802.3ad) across both NICs (enp3s0 + enp5s0) — bond0 with fast LACP rate, layer3+4 hash policy, DHCP on bond interface; bonding module loaded at boot
 
 ### 2026-03-29
 - **fix:** container metadata returns owner username before root in public-keys index — consumers that match on first hit (e.g. rust4git SSH) now resolve the named user instead of "root"
