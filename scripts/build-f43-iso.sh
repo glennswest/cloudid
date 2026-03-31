@@ -86,10 +86,6 @@ else
     COMPS_ARG=""
 fi
 
-# Create repo metadata with group definitions
-echo "=== Creating repository metadata ==="
-createrepo_c $COMPS_ARG "$PKGDIR"
-
 # === Build the DVD ISO ===
 echo "=== Building DVD ISO ==="
 EXTRACT="$WORK/isoextract"
@@ -103,7 +99,12 @@ chmod -R u+w "$EXTRACT"
 # Copy kickstart and packages into ISO tree
 cp /build/templates/fedora/f43.ks "$EXTRACT/ks.cfg"
 cp -a "$PKGDIR" "$EXTRACT/Packages"
-cp -a "$PKGDIR/repodata" "$EXTRACT/repodata"
+
+# Create repo metadata at ISO root level — paths in metadata will include
+# "Packages/" prefix so DNF finds RPMs at /Packages/*.rpm, not at /*.rpm
+echo "=== Creating repository metadata at ISO root ==="
+rm -rf "$EXTRACT/repodata"
+createrepo_c $COMPS_ARG "$EXTRACT"
 
 # Create .treeinfo so Anaconda recognizes this as a DVD install tree
 cat > "$EXTRACT/.treeinfo" << 'TREEEOF'
