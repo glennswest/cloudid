@@ -15,7 +15,7 @@ selinux --enforcing
 firewall --enabled --ssh
 
 # Network — single NIC for installer, bonding configured in %post for installed system
-network --bootproto=dhcp --device=enp3s0 --activate --hostname={{HOSTNAME}}
+network --bootproto=dhcp --device=enp3s0 --activate
 
 # Root password locked — SSH key access only
 rootpw --lock
