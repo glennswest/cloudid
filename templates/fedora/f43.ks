@@ -1,11 +1,11 @@
 # Fedora 43 Kickstart — ISO install
 # CloudID template: SSH keys merged automatically
 #
-# iSCSI CDROM boot: ISO appears as /dev/sdb (SCSI disk via LIO IBLOCK)
-# Kernel params: rd.iscsi.firmware ip=ibft inst.stage2=hd:/dev/sdb inst.ks=hd:/dev/sdb:/ks.cfg
+# iSCSI CDROM boot: iPXE SAN boots from iSCSI target, kernel reuses connection
+# Kernel params: rd.iscsi.firmware ip=ibft inst.ks=cdrom:/ks.cfg
 
-# Install from iSCSI disk (ISO appears as /dev/sdb, not /dev/sr0)
-harddrive --partition=/dev/sdb --dir=/
+# Install from boot media (iSCSI CDROM handed off from iPXE)
+cdrom
 
 # System config
 lang en_US.UTF-8
