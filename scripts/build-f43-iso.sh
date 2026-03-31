@@ -66,9 +66,30 @@ dnf download --resolve --alldeps \
 echo "=== Downloaded $(ls "$PKGDIR"/*.rpm 2>/dev/null | wc -l) RPMs ==="
 du -sh "$PKGDIR"
 
-# Create repo metadata
+# Download comps.xml (group definitions) from Fedora 43 repo
+echo "=== Downloading comps.xml for package group definitions ==="
+REPOMD_URL="${F43_REPO}repodata/repomd.xml"
+COMPS_HREF=$(curl -sf "$REPOMD_URL" | grep -oP 'href="[^"]*comps[^"]*\.xml(\.gz|\.xz|\.zst)?' | head -1 | sed 's/href="//')
+if [ -n "$COMPS_HREF" ]; then
+    echo "Found comps file: $COMPS_HREF"
+    curl -L --retry 3 -o "$WORK/comps-raw" "${F43_REPO}${COMPS_HREF}"
+    # Decompress if needed
+    case "$COMPS_HREF" in
+        *.gz)  gunzip -c "$WORK/comps-raw" > "$WORK/comps.xml" ;;
+        *.xz)  xz -dc "$WORK/comps-raw" > "$WORK/comps.xml" ;;
+        *.zst) zstd -dc "$WORK/comps-raw" > "$WORK/comps.xml" ;;
+        *)     mv "$WORK/comps-raw" "$WORK/comps.xml" ;;
+    esac
+    echo "comps.xml size: $(wc -c < "$WORK/comps.xml") bytes"
+    COMPS_ARG="-g $WORK/comps.xml"
+else
+    echo "WARNING: Could not find comps.xml in repo metadata"
+    COMPS_ARG=""
+fi
+
+# Create repo metadata with group definitions
 echo "=== Creating repository metadata ==="
-createrepo_c "$PKGDIR"
+createrepo_c $COMPS_ARG "$PKGDIR"
 
 # === Build the DVD ISO ===
 echo "=== Building DVD ISO ==="
