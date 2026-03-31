@@ -49,6 +49,20 @@ curl
 wget
 jq
 bash-completion
+# Anaconda requires these based on hardware/config (not in @core/@standard)
+grub2
+grub2-tools
+grub2-tools-minimal
+grub2-tools-extra
+grub2-pc
+shim-x64
+grub2-efi-x64
+efibootmgr
+iscsi-initiator-utils
+NetworkManager
+firewalld
+sudo
+dracut-config-rescue
 %end
 
 %post --log=/root/ks-post.log

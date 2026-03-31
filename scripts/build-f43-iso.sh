@@ -37,7 +37,8 @@ mkdir -p "$PKGDIR"
 INSTALLROOT="$WORK/installroot"
 rm -rf "$INSTALLROOT"
 
-EXTRA_PKGS="openssh-server openssh-clients chrony vim-enhanced tmux git rsync htop curl wget jq bash-completion podman buildah bind-utils iproute iputils"
+# Explicit packages from kickstart + Anaconda hardware-detected requirements
+EXTRA_PKGS="openssh-server openssh-clients chrony vim-enhanced tmux git rsync htop curl wget jq bash-completion podman buildah bind-utils iproute iputils grub2 grub2-tools grub2-tools-minimal grub2-tools-extra grub2-pc shim-x64 grub2-efi-x64 efibootmgr iscsi-initiator-utils NetworkManager firewalld sudo dracut-config-rescue kernel"
 
 echo "=== Resolving and downloading all packages via installroot ==="
 dnf install -y --downloadonly \
