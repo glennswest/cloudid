@@ -34,7 +34,10 @@ services --enabled=sshd,chronyd
 # Reboot after install
 reboot
 
-%packages
+# Text mode for serial console
+text
+
+%packages --ignoremissing
 @core
 @standard
 openssh-server
