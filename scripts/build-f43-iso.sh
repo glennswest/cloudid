@@ -7,7 +7,8 @@ ISO_NAME="fedora43.iso"
 WORK="/data/f43build"
 F43_URL="https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Everything/x86_64/os/images/boot.iso"
 F43_REPO="https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Everything/x86_64/os/"
-CLOUDID_KS="http://192.168.200.20:8090/config/kickstart"
+# Kickstart is embedded in ISO (matching rawhidebuild pattern)
+# CloudID merges SSH keys at boot time via %post timer
 
 # Install build tools
 echo "=== Installing build tools ==="
@@ -99,7 +100,8 @@ mkdir -p "$EXTRACT"
 xorriso -osirrox on -indev "$WORK/boot.iso" -extract / "$EXTRACT"
 chmod -R u+w "$EXTRACT"
 
-# Copy packages into ISO tree
+# Copy kickstart and packages into ISO tree
+cp /build/templates/fedora/f43.ks "$EXTRACT/ks.cfg"
 cp -a "$PKGDIR" "$EXTRACT/Packages"
 cp -a "$PKGDIR/repodata" "$EXTRACT/repodata"
 
@@ -115,10 +117,8 @@ for grubcfg in $(find "$EXTRACT" -name 'grub.cfg' 2>/dev/null); do
     # Auto-install: timeout 0, first entry
     sed -i 's/^set timeout=.*/set timeout=0/' "$grubcfg"
     sed -i 's/^set default=.*/set default="0"/' "$grubcfg"
-    # Keep original inst.stage2=hd:LABEL but add inst.repo (same label), iBFT, kickstart
-    # rd.iscsi.firmware tells dracut to reconnect iSCSI via iBFT
-    # inst.repo=hd:LABEL= tells Anaconda where to find packages (iSCSI disk is /dev/sdX not /dev/sr0)
-    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| rd.iscsi.firmware ip=dhcp inst.repo=hd:LABEL='"${ORIG_VOLID}"' inst.ks='"${CLOUDID_KS}"' earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
+    # Add kickstart + console to kernel lines (matching rawhidebuild pattern)
+    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| inst.ks=cdrom:/ks.cfg earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
     # Remove media check and quiet
     sed -i 's/ rd.live.check//g' "$grubcfg"
     sed -i 's/ quiet//g' "$grubcfg"
@@ -129,7 +129,8 @@ done
 
 # Build ISO using xorriso modify mode
 echo "=== Building final ISO with xorriso (modify mode) ==="
-MAP_ARGS="-map $EXTRACT/Packages /Packages"
+MAP_ARGS="-map $EXTRACT/ks.cfg /ks.cfg"
+MAP_ARGS="$MAP_ARGS -map $EXTRACT/Packages /Packages"
 MAP_ARGS="$MAP_ARGS -map $EXTRACT/repodata /repodata"
 for grubcfg in $(find "$EXTRACT" -name 'grub.cfg' 2>/dev/null); do
     REL_PATH="${grubcfg#$EXTRACT}"

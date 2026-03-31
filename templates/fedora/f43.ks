@@ -4,8 +4,8 @@
 # Boot host from Fedora 43 ISO, pass kernel parameter:
 #   inst.ks=http://192.168.200.20:8090/config/kickstart
 
-# Install source set via inst.repo=hd:LABEL= kernel parameter
-# (iSCSI ISO is /dev/sdX not /dev/sr0, so 'cdrom' directive won't find it)
+# Install from ISO media (packages embedded in DVD)
+cdrom
 
 # System config
 lang en_US.UTF-8
@@ -121,8 +121,13 @@ rm -f /etc/NetworkManager/system-connections/enp3s0.nmconnection 2>/dev/null || 
 sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
 sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 
-# Enable SSH key access for root (keys injected by CloudID merge)
+# Fetch SSH keys from CloudID at install time
 mkdir -p /root/.ssh && chmod 700 /root/.ssh
+CLOUDID="http://192.168.200.20:8090"
+for idx in $(curl -sf "${CLOUDID}/latest/meta-data/public-keys/" 2>/dev/null | grep -oP '^\d+' || true); do
+    curl -sf "${CLOUDID}/latest/meta-data/public-keys/${idx}/openssh-key" >> /root/.ssh/authorized_keys 2>/dev/null || true
+done
+[ -f /root/.ssh/authorized_keys ] && chmod 600 /root/.ssh/authorized_keys
 restorecon -R /root/.ssh 2>/dev/null || true
 
 # CloudID SSH key refresh timer
