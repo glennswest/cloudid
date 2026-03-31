@@ -117,8 +117,9 @@ for grubcfg in $(find "$EXTRACT" -name 'grub.cfg' 2>/dev/null); do
     # Auto-install: timeout 0, first entry
     sed -i 's/^set timeout=.*/set timeout=0/' "$grubcfg"
     sed -i 's/^set default=.*/set default="0"/' "$grubcfg"
-    # Add kickstart + console to kernel lines (matching rawhidebuild pattern)
-    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| inst.ks=cdrom:/ks.cfg earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
+    # rd.iscsi.firmware + ip=dhcp: dracut reconnects iSCSI target after iPXE handoff
+    # inst.ks=cdrom:/ks.cfg: kickstart embedded in ISO
+    sed -i '/^\s*linux\|^\s*linuxefi/ s|$| rd.iscsi.firmware ip=dhcp inst.ks=cdrom:/ks.cfg earlycon=uart8250,io,0x2f8,115200n8 console=tty0 console=ttyS1,115200n8 console=ttyS0,115200n8|' "$grubcfg"
     # Remove media check and quiet
     sed -i 's/ rd.live.check//g' "$grubcfg"
     sed -i 's/ quiet//g' "$grubcfg"
