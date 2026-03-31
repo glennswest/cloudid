@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-31
+- **feat:** Fedora 43 kickstart template for ISO-based installs — `cdrom` install source, DHCP networking, SSH hardened, keys from CloudID
+
 ### 2026-03-29
 - **fix:** container metadata returns owner username before root in public-keys index — consumers that match on first hit (e.g. rust4git SSH) now resolve the named user instead of "root"
 - **feat:** container metadata adds "admin" as additional ssh_user entry — index now returns owner, admin, root (all with same keys)
