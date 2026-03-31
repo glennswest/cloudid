@@ -5,6 +5,8 @@
 ### 2026-03-31
 - **feat:** Fedora 43 install system — custom boot ISO (patched grub.cfg with network stage2/repo, CloudID kickstart, ip=dhcp, serial console), build script runs as mkube job, kickstart template with CloudID key refresh timer and serial console
 - **fix:** iSCSI CDROM boot: replace `inst.stage2=hd:LABEL=` with network URL + `ip=dhcp` (dracut can't access iSCSI device after kernel handoff)
+- **fix:** merge_kickstart skips SSH key injection for non-root system users (e.g. `core`) that don't exist on standard Fedora — only injects for root and identity users
+- **fix:** DVD ISO repo metadata includes comps.xml group definitions — Anaconda needs these to resolve `@core` and `@standard` in kickstart `%packages`
 
 ### 2026-03-29
 - **fix:** container metadata returns owner username before root in public-keys index — consumers that match on first hit (e.g. rust4git SSH) now resolve the named user instead of "root"
