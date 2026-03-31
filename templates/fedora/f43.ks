@@ -14,8 +14,8 @@ timezone UTC --utc
 selinux --enforcing
 firewall --enabled --ssh
 
-# Network — DHCP with hostname from CloudID
-network --bootproto=dhcp --device=link --activate --hostname={{HOSTNAME}}
+# Network — LACP bonding (802.3ad) across both NICs, DHCP on bond0
+network --bondslaves=enp3s0,enp5s0 --bondopts=mode=802.3ad,miimon=100,lacp_rate=fast,xmit_hash_policy=layer3+4 --bootproto=dhcp --device=bond0 --activate --hostname={{HOSTNAME}}
 
 # Root password locked — SSH key access only
 rootpw --lock
@@ -53,6 +53,9 @@ bash-completion
 
 %post --log=/root/ks-post.log
 set -ex
+
+# Load bonding kernel module at boot
+echo bonding > /etc/modules-load.d/bonding.conf
 
 # Harden SSH
 sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
