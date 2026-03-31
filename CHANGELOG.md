@@ -3,7 +3,8 @@
 ## [Unreleased]
 
 ### 2026-03-31
-- **feat:** Fedora 43 kickstart template for ISO-based installs — `cdrom` install source, DHCP networking, SSH hardened, keys from CloudID
+- **feat:** Fedora 43 install system — custom boot ISO (patched grub.cfg with network stage2/repo, CloudID kickstart, ip=dhcp, serial console), build script runs as mkube job, kickstart template with CloudID key refresh timer and serial console
+- **fix:** iSCSI CDROM boot: replace `inst.stage2=hd:LABEL=` with network URL + `ip=dhcp` (dracut can't access iSCSI device after kernel handoff)
 
 ### 2026-03-29
 - **fix:** container metadata returns owner username before root in public-keys index — consumers that match on first hit (e.g. rust4git SSH) now resolve the named user instead of "root"
