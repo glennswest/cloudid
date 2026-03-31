@@ -371,8 +371,20 @@ fn merge_kickstart(base: &str, meta: &HostMetadata) -> String {
         ));
     }
 
-    // Add SSH keys for system users
+    // Collect identity user names (these will be created below)
+    let identity_users: std::collections::HashSet<&str> = meta
+        .cloud_config
+        .users
+        .iter()
+        .map(|u| u.name.as_str())
+        .collect();
+
+    // Add SSH keys for system users — only for users that exist on standard Linux
+    // (root always exists; skip CoreOS-only users like "core" unless they're identity users)
     for pk in &meta.public_keys {
+        if pk.ssh_user != "root" && !identity_users.contains(pk.ssh_user.as_str()) {
+            continue;
+        }
         for key in &pk.keys {
             extra_lines.push(format!("sshkey --username={} \"{}\"", pk.ssh_user, key));
         }
