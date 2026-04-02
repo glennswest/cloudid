@@ -6,6 +6,7 @@ use cloudid::model::*;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::task::JoinSet;
 
 /// Build a minimal Config suitable for tests (no file I/O).
@@ -1348,4 +1349,162 @@ async fn test_http_placement_endpoints() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
     assert_eq!(body, "test-az");
+}
+
+// ---- Performance tests ----
+
+#[tokio::test]
+async fn test_metadata_lookup_latency() {
+    // Target: <5ms per lookup from precomputed cache.
+    // This test verifies lookups are fast even with a moderately large dataset.
+    let mut identity = IdentityState::default();
+    for i in 0..20 {
+        let name = format!("user{}", i);
+        let key = format!("ssh-ed25519 KEY{:04} {}@test", i, name);
+        identity.users.insert(name.clone(), make_user(&name, 1000 + i, &key));
+    }
+
+    let subjects: Vec<Subject> = (0..20)
+        .map(|i| Subject {
+            kind: SubjectKind::User,
+            name: format!("user{}", i),
+        })
+        .collect();
+    identity.host_access.insert(
+        "all-access".into(),
+        Resource {
+            kind: "HostAccess".to_string(),
+            metadata: ResourceMeta {
+                name: "all-access".to_string(),
+                namespace: String::new(),
+                labels: HashMap::new(),
+                annotations: HashMap::new(),
+            },
+            spec: HostAccessSpec {
+                subjects,
+                targets: HostAccessTargets {
+                    hosts: vec!["*".to_string()],
+                    host_groups: vec![],
+                    host_selectors: vec![],
+                },
+                ssh_users: vec!["root".to_string(), "core".to_string()],
+                sudo: false,
+            },
+            status: None,
+        },
+    );
+
+    let mut bmh = BmhState::default();
+    for i in 0..100 {
+        let ip: IpAddr = format!("10.0.{}.{}", i / 256, (i % 256) + 1)
+            .parse()
+            .unwrap();
+        bmh.ip_to_hostname.insert(ip, format!("host{}", i));
+    }
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+
+    // Warm up
+    let _ = state.get_metadata(&"10.0.0.1".parse().unwrap());
+
+    // Benchmark: 10000 cache lookups
+    let start = Instant::now();
+    let iterations = 10_000;
+    for i in 0..iterations {
+        let ip: IpAddr = format!("10.0.0.{}", (i % 100) + 1).parse().unwrap();
+        let _ = state.get_metadata(&ip);
+    }
+    let elapsed = start.elapsed();
+    let per_lookup_ns = elapsed.as_nanos() / iterations as u128;
+    let per_lookup_us = per_lookup_ns as f64 / 1000.0;
+
+    // Assert under 5ms (5000us) per lookup — should be well under 100us
+    assert!(
+        per_lookup_us < 5000.0,
+        "metadata lookup too slow: {:.1}us per lookup (target <5000us)",
+        per_lookup_us
+    );
+
+    // Print for visibility when running tests with --nocapture
+    eprintln!(
+        "metadata lookup: {:.1}us/lookup ({} lookups in {:.1}ms)",
+        per_lookup_us,
+        iterations,
+        elapsed.as_secs_f64() * 1000.0
+    );
+}
+
+#[tokio::test]
+async fn test_cache_rebuild_latency() {
+    // Benchmark cache rebuild time with a realistic dataset.
+    let mut identity = IdentityState::default();
+    for i in 0..10 {
+        let name = format!("user{}", i);
+        let key = format!("ssh-ed25519 KEY{:04} {}@test", i, name);
+        identity.users.insert(name.clone(), make_user(&name, 1000 + i, &key));
+    }
+
+    let subjects: Vec<Subject> = (0..10)
+        .map(|i| Subject {
+            kind: SubjectKind::User,
+            name: format!("user{}", i),
+        })
+        .collect();
+    identity.host_access.insert(
+        "all-access".into(),
+        Resource {
+            kind: "HostAccess".to_string(),
+            metadata: ResourceMeta {
+                name: "all-access".to_string(),
+                namespace: String::new(),
+                labels: HashMap::new(),
+                annotations: HashMap::new(),
+            },
+            spec: HostAccessSpec {
+                subjects,
+                targets: HostAccessTargets {
+                    hosts: vec!["*".to_string()],
+                    host_groups: vec![],
+                    host_selectors: vec![],
+                },
+                ssh_users: vec!["root".to_string()],
+                sudo: false,
+            },
+            status: None,
+        },
+    );
+
+    let mut bmh = BmhState::default();
+    for i in 0..100 {
+        let ip: IpAddr = format!("10.0.{}.{}", i / 256, (i % 256) + 1)
+            .parse()
+            .unwrap();
+        bmh.ip_to_hostname.insert(ip, format!("host{}", i));
+    }
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+
+    // Benchmark: 100 rebuilds
+    let start = Instant::now();
+    let iterations = 100;
+    for _ in 0..iterations {
+        state.rebuild_cache().await;
+    }
+    let elapsed = start.elapsed();
+    let per_rebuild_ms = elapsed.as_secs_f64() * 1000.0 / iterations as f64;
+
+    // Cache rebuild for 100 hosts should be under 100ms
+    assert!(
+        per_rebuild_ms < 100.0,
+        "cache rebuild too slow: {:.1}ms per rebuild (target <100ms)",
+        per_rebuild_ms
+    );
+
+    eprintln!(
+        "cache rebuild: {:.2}ms/rebuild ({} hosts, {} rebuilds in {:.1}ms)",
+        per_rebuild_ms,
+        100,
+        iterations,
+        elapsed.as_secs_f64() * 1000.0
+    );
 }

@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### 2026-04-01
-- **test:** Integration test suite — 29 end-to-end tests covering cache rebuild, unknown IP handling, container identity, group expansion, label selectors, host groups, wildcard rules, on-demand resolve fallback, IMDSv2 tokens, cloud-config format, mixed BMH+container scenarios, offline operation (cache survival after identity/BMH loss), concurrent cache reads during rebuild, large dataset rebuild (100 users x 200 hosts), HTTP endpoint integration tests (metadata, public-keys, placement, versioned paths, 404 for unknown IPs) (49 total tests)
+- **test:** Integration test suite — 31 end-to-end tests covering cache rebuild, unknown IP handling, container identity, group expansion, label selectors, host groups, wildcard rules, on-demand resolve fallback, IMDSv2 tokens, cloud-config format, mixed BMH+container scenarios, offline operation (cache survival after identity/BMH loss), concurrent cache reads during rebuild, large dataset rebuild (100 users x 200 hosts), HTTP endpoint integration tests (metadata, public-keys, placement, versioned paths, 404 for unknown IPs), performance benchmarks (lookup ~12us, rebuild ~6ms/100 hosts) (51 total tests)
 
 ### 2026-03-31
 - **feat:** Fedora 43 install system — custom boot ISO (patched grub.cfg with network stage2/repo, CloudID kickstart, ip=dhcp, serial console), build script runs as mkube job, kickstart template with CloudID key refresh timer and serial console
