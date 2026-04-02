@@ -6,6 +6,7 @@ use cloudid::model::*;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
+use tokio::task::JoinSet;
 
 /// Build a minimal Config suitable for tests (no file I/O).
 fn test_config() -> Config {
@@ -841,4 +842,510 @@ async fn test_mixed_bmh_and_containers() {
     // Container entry
     let ctr_meta = state.get_metadata(&container_ip).unwrap();
     assert_eq!(ctr_meta.instance_id, "prod/myapp");
+}
+
+// ---- Offline operation tests ----
+
+#[tokio::test]
+async fn test_cache_survives_identity_clear() {
+    // Simulate: data was loaded, cache built, then NATS disconnects and identity is lost.
+    // Cache should still serve previously-computed metadata.
+    let mut identity = IdentityState::default();
+    identity
+        .users
+        .insert("alice".into(), make_user("alice", 1000, "ssh-ed25519 AAAA alice@test"));
+    identity.host_access.insert(
+        "rule-1".into(),
+        make_host_access("rule-1", vec!["alice"], vec!["server1"], vec!["root"], false),
+    );
+
+    let mut bmh = BmhState::default();
+    let ip: IpAddr = "10.0.0.1".parse().unwrap();
+    bmh.ip_to_hostname.insert(ip, "server1".to_string());
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+    assert!(state.get_metadata(&ip).is_some());
+
+    // Simulate NATS disconnect: identity data is gone, but we do NOT rebuild cache.
+    // In production, the watcher would not trigger a rebuild if it loses connection.
+    {
+        let mut id = state.identity.write().await;
+        *id = IdentityState::default();
+    }
+
+    // Cache still has the old data — this is the key offline behavior.
+    let meta = state.get_metadata(&ip);
+    assert!(meta.is_some(), "cache should survive identity clear without rebuild");
+    assert_eq!(meta.unwrap().instance_id, "server1");
+}
+
+#[tokio::test]
+async fn test_cache_rebuild_with_empty_identity_clears_entries() {
+    // If a rebuild IS triggered with empty identity, entries should be cleared.
+    let mut identity = IdentityState::default();
+    identity
+        .users
+        .insert("alice".into(), make_user("alice", 1000, "ssh-ed25519 AAAA alice@test"));
+    identity.host_access.insert(
+        "rule-1".into(),
+        make_host_access("rule-1", vec!["alice"], vec!["server1"], vec!["root"], false),
+    );
+
+    let mut bmh = BmhState::default();
+    let ip: IpAddr = "10.0.0.1".parse().unwrap();
+    bmh.ip_to_hostname.insert(ip, "server1".to_string());
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+    assert!(state.get_metadata(&ip).is_some());
+
+    // Clear identity and rebuild — entries should vanish
+    {
+        let mut id = state.identity.write().await;
+        *id = IdentityState::default();
+    }
+    state.rebuild_cache().await;
+
+    assert!(
+        state.get_metadata(&ip).is_none(),
+        "rebuild with empty identity should clear cache entries"
+    );
+}
+
+#[tokio::test]
+async fn test_resolve_on_demand_with_stale_cache() {
+    // Cache was built with old data, BMH state has changed.
+    // resolve_on_demand should use current BMH + identity state.
+    let mut identity = IdentityState::default();
+    identity
+        .users
+        .insert("alice".into(), make_user("alice", 1000, "ssh-ed25519 AAAA alice@test"));
+    identity.host_access.insert(
+        "rule-1".into(),
+        make_host_access("rule-1", vec!["alice"], vec!["*"], vec!["root"], false),
+    );
+
+    let state = build_state(identity, BmhState::default(), ContainerState::default()).await;
+
+    // No BMH hosts when cache was built, so cache is empty.
+    let new_ip: IpAddr = "10.0.0.99".parse().unwrap();
+    assert!(state.get_metadata(&new_ip).is_none());
+
+    // Add a new host to BMH state (simulates mkube discovering a new host)
+    {
+        let mut bmh = state.bmh.write().await;
+        bmh.ip_to_hostname.insert(new_ip, "new-server".to_string());
+    }
+
+    // Cache miss, but resolve_on_demand reads current state directly
+    let meta = state.resolve_on_demand(&new_ip).await;
+    assert!(meta.is_some(), "on-demand resolve should find newly-added host");
+    assert_eq!(meta.unwrap().instance_id, "new-server");
+}
+
+#[tokio::test]
+async fn test_bmh_state_survives_without_mkube() {
+    // Simulate: BMH data loaded, cache built, mkube goes offline.
+    // Existing cache entries should remain usable.
+    let mut identity = IdentityState::default();
+    identity
+        .users
+        .insert("alice".into(), make_user("alice", 1000, "ssh-ed25519 AAAA alice@test"));
+    identity.host_access.insert(
+        "rule-1".into(),
+        make_host_access("rule-1", vec!["alice"], vec!["*"], vec!["root"], false),
+    );
+
+    let mut bmh = BmhState::default();
+    let ip1: IpAddr = "10.0.0.1".parse().unwrap();
+    let ip2: IpAddr = "10.0.0.2".parse().unwrap();
+    bmh.ip_to_hostname.insert(ip1, "server1".to_string());
+    bmh.ip_to_hostname.insert(ip2, "server2".to_string());
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+
+    // Both hosts cached
+    assert!(state.get_metadata(&ip1).is_some());
+    assert!(state.get_metadata(&ip2).is_some());
+
+    // Simulate mkube offline: BMH data frozen (no watcher updates), but no clear.
+    // A rebuild with existing data should keep entries stable.
+    state.rebuild_cache().await;
+    assert!(state.get_metadata(&ip1).is_some());
+    assert!(state.get_metadata(&ip2).is_some());
+}
+
+// ---- Cache rebuild under load tests ----
+
+#[tokio::test]
+async fn test_concurrent_reads_during_rebuild() {
+    let mut identity = IdentityState::default();
+    identity
+        .users
+        .insert("alice".into(), make_user("alice", 1000, "ssh-ed25519 AAAA alice@test"));
+    identity.host_access.insert(
+        "rule-1".into(),
+        make_host_access("rule-1", vec!["alice"], vec!["*"], vec!["root"], false),
+    );
+
+    let mut bmh = BmhState::default();
+    for i in 0..50 {
+        let ip: IpAddr = format!("10.0.0.{}", i + 1).parse().unwrap();
+        bmh.ip_to_hostname.insert(ip, format!("server{}", i + 1));
+    }
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+
+    // Spawn concurrent readers while rebuilding
+    let state_clone = state.clone();
+    let rebuild_handle = tokio::spawn(async move {
+        for _ in 0..10 {
+            state_clone.rebuild_cache().await;
+        }
+    });
+
+    let mut readers = JoinSet::new();
+    for i in 0..50 {
+        let st = state.clone();
+        readers.spawn(async move {
+            let ip: IpAddr = format!("10.0.0.{}", (i % 50) + 1).parse().unwrap();
+            // Reads may return None briefly during rebuild (cache.clear()),
+            // but should never panic.
+            for _ in 0..100 {
+                let _ = st.get_metadata(&ip);
+            }
+        });
+    }
+
+    rebuild_handle.await.unwrap();
+    while let Some(result) = readers.join_next().await {
+        result.unwrap(); // No panics
+    }
+
+    // After all rebuilds settle, all hosts should be in cache
+    for i in 0..50 {
+        let ip: IpAddr = format!("10.0.0.{}", i + 1).parse().unwrap();
+        assert!(
+            state.get_metadata(&ip).is_some(),
+            "server{} should be in cache after rebuild",
+            i + 1
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_large_dataset_rebuild() {
+    let mut identity = IdentityState::default();
+
+    // 100 users, each with a key
+    for i in 0..100 {
+        let name = format!("user{}", i);
+        let key = format!("ssh-ed25519 KEY{:04} {}@test", i, name);
+        identity.users.insert(name.clone(), make_user(&name, 1000 + i, &key));
+    }
+
+    // Wildcard rule granting all users access to all hosts
+    let all_users: Vec<&str> = identity.users.keys().map(|k| k.as_str()).collect();
+    // Build subjects manually since we have 100 users
+    let subjects: Vec<Subject> = all_users
+        .iter()
+        .map(|u| Subject {
+            kind: SubjectKind::User,
+            name: u.to_string(),
+        })
+        .collect();
+    identity.host_access.insert(
+        "all-access".into(),
+        Resource {
+            kind: "HostAccess".to_string(),
+            metadata: ResourceMeta {
+                name: "all-access".to_string(),
+                namespace: String::new(),
+                labels: HashMap::new(),
+                annotations: HashMap::new(),
+            },
+            spec: HostAccessSpec {
+                subjects,
+                targets: HostAccessTargets {
+                    hosts: vec!["*".to_string()],
+                    host_groups: vec![],
+                    host_selectors: vec![],
+                },
+                ssh_users: vec!["root".to_string()],
+                sudo: false,
+            },
+            status: None,
+        },
+    );
+
+    // 200 hosts
+    let mut bmh = BmhState::default();
+    for i in 0..200 {
+        let ip: IpAddr = format!("10.{}.{}.{}", i / 65536, (i / 256) % 256, (i % 256) + 1)
+            .parse()
+            .unwrap();
+        bmh.ip_to_hostname.insert(ip, format!("host{}", i));
+    }
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+
+    assert_eq!(state.metadata_cache.len(), 200);
+
+    // Spot-check: each host should have 100 root keys
+    let sample_ip: IpAddr = "10.0.0.1".parse().unwrap();
+    let meta = state.get_metadata(&sample_ip).unwrap();
+    let root_keys = meta.public_keys.iter().find(|pk| pk.ssh_user == "root").unwrap();
+    assert_eq!(root_keys.keys.len(), 100);
+}
+
+// ---- HTTP endpoint integration tests ----
+
+#[tokio::test]
+async fn test_http_metadata_endpoints() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let mut identity = IdentityState::default();
+    identity
+        .users
+        .insert("alice".into(), make_user("alice", 1000, "ssh-ed25519 AAAA alice@test"));
+    identity.host_access.insert(
+        "rule-1".into(),
+        make_host_access("rule-1", vec!["alice"], vec!["server1"], vec!["root", "core"], true),
+    );
+
+    let mut bmh = BmhState::default();
+    let ip: IpAddr = "10.0.0.1".parse().unwrap();
+    bmh.ip_to_hostname.insert(ip, "server1".to_string());
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+    let app = cloudid::metadata::router(state);
+
+    // GET /latest/meta-data/instance-id
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/latest/meta-data/instance-id")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+    assert_eq!(body, "server1");
+
+    // GET /latest/meta-data/hostname
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/latest/meta-data/hostname")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+    assert_eq!(body, "server1.test.lo");
+
+    // GET /latest/meta-data/local-ipv4
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/latest/meta-data/local-ipv4")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+    assert_eq!(body, "10.0.0.1");
+
+    // GET /latest/meta-data/public-keys/
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/latest/meta-data/public-keys/")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = String::from_utf8(
+        axum::body::to_bytes(resp.into_body(), 4096)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body.contains("core"));
+    assert!(body.contains("root"));
+
+    // GET /latest/meta-data/public-keys/0/openssh-key
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/latest/meta-data/public-keys/0/openssh-key")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = String::from_utf8(
+        axum::body::to_bytes(resp.into_body(), 4096)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body.contains("ssh-ed25519 AAAA alice@test"));
+
+    // GET /health
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_http_unknown_ip_returns_404() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let state = build_state(
+        IdentityState::default(),
+        BmhState::default(),
+        ContainerState::default(),
+    )
+    .await;
+    let app = cloudid::metadata::router(state);
+
+    let unknown_ip: IpAddr = "10.99.99.99".parse().unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/latest/meta-data/instance-id")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(unknown_ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_http_versioned_paths() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let mut identity = IdentityState::default();
+    identity
+        .users
+        .insert("alice".into(), make_user("alice", 1000, "ssh-ed25519 AAAA alice@test"));
+    identity.host_access.insert(
+        "rule-1".into(),
+        make_host_access("rule-1", vec!["alice"], vec!["server1"], vec!["root"], false),
+    );
+
+    let mut bmh = BmhState::default();
+    let ip: IpAddr = "10.0.0.1".parse().unwrap();
+    bmh.ip_to_hostname.insert(ip, "server1".to_string());
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+    let app = cloudid::metadata::router(state);
+
+    // Versioned path should work the same as /latest/
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/2021-01-03/meta-data/instance-id")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+    assert_eq!(body, "server1");
+
+    // Older version too
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/2009-04-04/meta-data/instance-id")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+    assert_eq!(body, "server1");
+}
+
+#[tokio::test]
+async fn test_http_placement_endpoints() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let mut identity = IdentityState::default();
+    identity
+        .users
+        .insert("alice".into(), make_user("alice", 1000, "ssh-ed25519 AAAA alice@test"));
+    identity.host_access.insert(
+        "rule-1".into(),
+        make_host_access("rule-1", vec!["alice"], vec!["server1"], vec!["root"], false),
+    );
+
+    let mut bmh = BmhState::default();
+    let ip: IpAddr = "10.0.0.1".parse().unwrap();
+    bmh.ip_to_hostname.insert(ip, "server1".to_string());
+
+    let state = build_state(identity, bmh, ContainerState::default()).await;
+    let app = cloudid::metadata::router(state);
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/latest/meta-data/placement/availability-zone")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::new(ip, 12345)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+    assert_eq!(body, "test-az");
 }

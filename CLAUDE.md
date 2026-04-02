@@ -226,10 +226,10 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 
 ### Phase 6: Integration & Hardening
 - [x] Unit tests for resolution pipeline
-- [x] Integration tests with mock AMO data (19 tests in tests/integration_test.rs)
-- [ ] Test offline operation (NATS down, mkube down)
-- [x] Test unknown IP handling
-- [ ] Test cache rebuild under load
+- [x] Integration tests with mock AMO data (29 tests in tests/integration_test.rs)
+- [x] Test offline operation (NATS down, mkube down) — cache survival, rebuild with empty state, on-demand resolve fallback
+- [x] Test unknown IP handling — cache miss, HTTP 404, is_unknown_ip
+- [x] Test cache rebuild under load — concurrent reads, 100 users x 200 hosts large dataset
 - [x] Container image (scratch)
 - [ ] Deploy scripts + mkube pod manifest
 - [ ] SSSD/PAM config examples for non-CoreOS Linux
