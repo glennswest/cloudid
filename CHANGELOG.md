@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-04-01
+- **test:** Integration test suite — 19 end-to-end tests covering cache rebuild, unknown IP handling, container identity, group expansion, label selectors, host groups, wildcard rules, on-demand resolve fallback, IMDSv2 tokens, cloud-config format, mixed BMH+container scenarios (39 total tests)
+
 ### 2026-03-31
 - **feat:** Fedora 43 install system — custom boot ISO (patched grub.cfg with network stage2/repo, CloudID kickstart, ip=dhcp, serial console), build script runs as mkube job, kickstart template with CloudID key refresh timer and serial console
 - **fix:** iSCSI CDROM boot: replace `inst.stage2=hd:LABEL=` with network URL + `ip=dhcp` (dracut can't access iSCSI device after kernel handoff)
