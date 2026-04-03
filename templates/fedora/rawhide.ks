@@ -31,7 +31,7 @@ services --enabled=sshd,chronyd
 # Reboot after install
 reboot
 
-%packages
+%packages --ignoremissing
 @core
 @standard
 @development-tools
