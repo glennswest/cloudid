@@ -170,6 +170,9 @@ GRUB_SERIAL_COMMAND="serial --unit=1 --speed=115200"
 GRUBEOF
 grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || true
 
+# Force SELinux autorelabel on first boot — fresh install has unlabeled files
+touch /.autorelabel
+
 %end
 
 # boot-complete must run --nochroot so it uses Anaconda's live network
