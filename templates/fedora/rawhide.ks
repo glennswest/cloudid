@@ -133,3 +133,16 @@ rustup component add rust-src rust-analyzer
 echo 'export GOPATH=/root/go' >> /root/.bashrc
 echo 'export PATH=$PATH:/root/go/bin:/root/.cargo/bin' >> /root/.bashrc
 %end
+
+# boot-complete must run --nochroot so it uses Anaconda's live network
+# (the chroot may not have routing to cross-network IPs)
+%post --nochroot --log=/mnt/sysimage/root/boot-complete.log
+echo "=== boot-complete: signaling mkube ==="
+echo "Date: $(date)"
+echo "Network interfaces:"
+ip -4 addr show 2>/dev/null || true
+echo "Route table:"
+ip route show 2>/dev/null || true
+echo "Attempting boot-complete..."
+curl -v -X POST "http://192.168.200.2:8082/api/v1/boot-complete" 2>&1 && echo "SUCCESS: Switched to localboot" || echo "FAILED: boot-complete call failed (exit $?)"
+%end
