@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-04-03
+- **fix:** rawhide kickstart: add boot-complete `%post --nochroot` section — boot-complete call was in chroot `%post` which lacks routing to cross-network mkube IP; installs never signaled completion so image never switched to localboot
+
 ### 2026-04-02
 - **fix:** rawhide kickstart: add `--ignoremissing` to `%packages` — Anaconda on Rawhide fails on missing packages (`dracut-network`, `traceroute`, `whois`, `gdb`, `valgrind`, etc.)
 
