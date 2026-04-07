@@ -5,7 +5,7 @@ use cloudid::config::Config;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 #[derive(Parser)]
 #[command(name = "cloudid", about = "Afterburn-compatible metadata service")]
@@ -72,6 +72,23 @@ async fn main() -> Result<()> {
                 cloudid::metadata_route::start(mkube_url).await;
             });
 
+            // Spawn RouterOS NAT manager (ensures IMDS DST-NAT rule exists)
+            if let Some(ros_config) = config.routeros.clone() {
+                let listen_addr: SocketAddr = config.server.metadata_addr.parse()
+                    .expect("invalid metadata_addr");
+                let port = listen_addr.port().to_string();
+                tokio::spawn(async move {
+                    let cloudid_ip = match &ros_config.to_address {
+                        Some(ip) => ip.clone(),
+                        None => discover_local_ip(&ros_config.rest_url),
+                    };
+                    info!(cloudid_ip = %cloudid_ip, cloudid_port = %port, "RouterOS NAT manager starting");
+                    cloudid::routeros_nat::start(ros_config, cloudid_ip, port).await;
+                });
+            } else {
+                debug!("no [routeros] config, skipping NAT management");
+            }
+
             // Start HTTP server
             let app = cloudid::metadata::router(Arc::clone(&state));
 
@@ -92,4 +109,19 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Discover this host's IP by parsing the router host from the REST URL
+/// and opening a UDP socket toward it. The OS picks the correct source IP.
+fn discover_local_ip(rest_url: &str) -> String {
+    // Parse host:port from the URL (e.g. "http://192.168.200.1/rest" -> "192.168.200.1:80")
+    let url: url::Url = rest_url.parse().expect("invalid routeros.rest_url");
+    let host = url.host_str().expect("routeros.rest_url has no host");
+    let port = url.port_or_known_default().unwrap_or(80);
+    let target = format!("{}:{}", host, port);
+
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
+    sock.connect(&target).expect("failed to connect UDP socket");
+    let local = sock.local_addr().expect("failed to get local addr");
+    local.ip().to_string()
 }

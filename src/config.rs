@@ -13,6 +13,9 @@ pub struct Config {
     pub static_host_access: Vec<StaticHostAccessConfig>,
     #[serde(default)]
     pub templates: TemplatesConfig,
+    /// RouterOS REST API connection for IMDS DST-NAT rule management.
+    /// If absent, NAT management is skipped.
+    pub routeros: Option<RouterOsConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,6 +45,20 @@ pub struct MetadataConfig {
 
 fn default_cache_interval() -> u64 {
     30
+}
+
+/// RouterOS REST API connection for self-managing IMDS DST-NAT rule.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RouterOsConfig {
+    /// RouterOS REST URL, e.g. "http://192.168.200.1/rest"
+    pub rest_url: String,
+    /// RouterOS API user
+    pub user: String,
+    /// RouterOS API password
+    pub password: String,
+    /// CloudID's routable IP for the NAT target (e.g. "192.168.200.20").
+    /// If omitted, auto-detected by connecting to the router.
+    pub to_address: Option<String>,
 }
 
 /// A user defined directly in config.toml (bypass AMO for bootstrap).

@@ -221,6 +221,7 @@ cargo build --release --target aarch64-unknown-linux-musl   # ARM64 release
 - [x] `status` subcommand: show current metadata for this host
 - [x] Ignition config serving (`/config/ignition`) -- base from BMH CRD, SSH keys merged
 - [x] Kickstart config serving (`/config/kickstart`) -- base from BMH CRD, SSH keys merged
+- [x] RouterOS DST-NAT self-management — ensures 169.254.169.254:80 NAT rule on router (GitHub #1)
 - [ ] Ignition DNAT rule + periodic timer systemd units
 - [x] Self-healing: if metadata endpoint unreachable, keep existing keys (never delete working keys)
 

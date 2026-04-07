@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 2026-04-07
+- **feat:** RouterOS DST-NAT self-management — on startup and every 60s, checks/creates/updates a `dstnat` rule on the router that redirects `169.254.169.254:80` to cloudid's listen address (fixes GitHub #1: servers boot-looping on missing IMDS NAT rule)
+- **feat:** `[routeros]` config section — `rest_url`, `user`, `password`, optional `to_address` for explicit cloudid IP
+
 ### 2026-04-03
 - **fix:** rawhide kickstart: add boot-complete `%post --nochroot` section — boot-complete call was in chroot `%post` which lacks routing to cross-network mkube IP; installs never signaled completion so image never switched to localboot
 

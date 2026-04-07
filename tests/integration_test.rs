@@ -30,6 +30,7 @@ fn test_config() -> Config {
         static_users: vec![],
         static_host_access: vec![],
         templates: TemplatesConfig::default(),
+        routeros: None,
     }
 }
 
