@@ -7,6 +7,7 @@ use axum::routing::{delete, get, post, put};
 use axum::Router;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tower_http::cors::{Any, CorsLayer};
 
 async fn access_log(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -179,6 +180,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/health", get(handlers::health))
         .route("/api/v1/debug/state", get(handlers::debug_state))
+        .layer(CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any))
         .layer(middleware::from_fn(access_log))
         .with_state(state)
 }

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-04-07
+- **fix:** add CORS headers to cloudid API — mkube UI CloudID tab failed because browser blocked cross-origin fetch requests from `192.168.200.2:8082` to `192.168.200.20:8090`
 - **fix:** agent-runner template: add LACP bonding (802.3ad) for enp3s0 + enp5s0 — bond0 with DHCP, `dns-search=~.` for default-route DNS; replaces broken standalone NIC config where enp3s0 had `method=manual` (no DNS) and enp5s0 couldn't get a lease
 - **fix:** agent-runner template: add `bonding` kernel module load at boot
 - **fix:** server1 DHCP reservation: add `domain_search` (g10.lo, gt.lo, gw.lo, etc.) — systemd-resolved needs search domains to route cross-domain queries to the DNS server
