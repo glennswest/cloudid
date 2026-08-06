@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-08-06
+- **fix:** stop the "failed to open log file" ERROR storm that flooded rose1's host log (closes #2). stormlog's file writer had no `[stormlog.file]` config so it defaulted to `/var/log/stormd`, which doesn't exist in the scratch image — every child stdout line emitted an ERROR. All stormd logging (`general.log_dir` + `[stormlog.file]`) now targets `/var/lib/cloudid/logs` on the **cloudid-data PVC** (container-local `/var` is tmpfs on rose — logging there would eat router RAM), with a baked-in directory skeleton (`deploy/rootfs/`) as fallback so log-open can never error-storm.
+
 ### 2026-04-07
 - **fix:** add CORS headers to cloudid API — mkube UI CloudID tab failed because browser blocked cross-origin fetch requests from `192.168.200.2:8082` to `192.168.200.20:8090`
 - **fix:** agent-runner template: add LACP bonding (802.3ad) for enp3s0 + enp5s0 — bond0 with DHCP, `dns-search=~.` for default-route DNS; replaces broken standalone NIC config where enp3s0 had `method=manual` (no DNS) and enp5s0 couldn't get a lease

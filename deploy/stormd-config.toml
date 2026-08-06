@@ -3,7 +3,9 @@
 
 [general]
 name = "cloudid"
-log_dir = "/var/stormd/logs"
+# On the cloudid-data PVC — container-local /var is tmpfs on rose (RAM);
+# logs there would fill the router's memory.
+log_dir = "/var/lib/cloudid/logs"
 
 [api]
 bind = "0.0.0.0:9080"
@@ -18,6 +20,14 @@ password = "stormd"
 rows = 50
 cols = 200
 scrollback = 10000
+
+# Without this, stormlog's file writer defaults to /var/log/stormd, which
+# doesn't exist in the scratch image — every child stdout line then emits a
+# "failed to open log file" ERROR, flooding the RouterOS host log.
+# Logs live on the cloudid-data PVC (mounted at /var/lib/cloudid) so they
+# survive container recreation; the directory skeleton is baked into the image.
+[stormlog.file]
+log_dir = "/var/lib/cloudid/logs"
 
 [[process]]
 name = "cloudid"
