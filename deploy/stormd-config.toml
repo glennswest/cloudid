@@ -37,3 +37,4 @@ on_failure = "restart"
 restart_delay_secs = 5
 max_restarts = 100
 restart_window_secs = 3600
+# cache-buster: 2026-08-06 rebuild to invalidate stale mkube tarball/root-dir
